@@ -1,2 +1,3 @@
 cartpole, Over False, Under True, Spec 0, Runner 0, -- #Subdomain: 66, Time: 25.512, Coverage: 0.752 
 cartpole, Over False, Under True, Spec 0, Runner 0, -- #Subdomain: 65, Time: 15.490, Coverage: 0.750 
+cartpole, Over False, Under True, Spec 0, Runner 0, -- #Subdomain: 65, Time: 17.390, Coverage: 0.750 
