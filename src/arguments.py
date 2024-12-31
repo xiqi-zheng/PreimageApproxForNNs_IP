@@ -113,7 +113,7 @@ class ConfigHandler:
         self.add_argument("--atk_tp", type=str, default="patch", choices=["patch_eps", "patch", "l0_rand", "l0_sensitive", "l_inf"], help='The pixel attack to specify the input specification.',
                           hierarchy=h + ["atk_tp"])      
         h = ["general"]
-        self.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"],
+        self.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"],
                           help='Select device to run verifier, cpu or cuda (GPU).', hierarchy=h + ["device"])
         self.add_argument("--seed", type=int, default=100, help='Random seed.', hierarchy=h + ["seed"])
         self.add_argument("--conv_mode", default="matrix", choices=["patches", "matrix"],

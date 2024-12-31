@@ -17,14 +17,19 @@ from torch.nn import ZeroPad2d
 
 import torch.nn.functional as F
 import torch.nn as nn
+import beta_CROWN_solver
+import sys
+import os
 
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(parent_dir)
 from auto_LiRPA import BoundedModule, BoundedTensor
 from auto_LiRPA.perturbations import *
 from auto_LiRPA.utils import (reduction_min, reduction_max, reduction_mean, reduction_sum,
                             stop_criterion_sum, stop_criterion_min)
 from model_defs import Flatten
 from auto_LiRPA.bound_ops import BoundRelu, BoundLinear, BoundConv, BoundBatchNormalization, BoundAdd
-import beta_CROWN_solver
+
 
 try:
     from scip_model import SCIPModel, EarlyStopEvent, GenerateCutsEvent

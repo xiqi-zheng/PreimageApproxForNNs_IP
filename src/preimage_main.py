@@ -6,6 +6,8 @@
 #########################################################################
 """ Preimage generation main interface."""
 
+
+
 import copy
 import socket
 import random
@@ -13,15 +15,28 @@ import time
 import gc
 import torch
 import numpy as np
-import os
 from collections import defaultdict
 
+
+
 import arguments
+
+import sys
+import os
+
+# from custom_model_data import simple_conv_model
+from attack_pgd import attack
+from lp_mip_solver import FSB_score
+
+# Retrieve the upper level directory of the current file directory, which contains auto_LiRPA
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(parent_dir)
+
 from auto_LiRPA import BoundedTensor
 from auto_LiRPA.perturbations import PerturbationLpNorm
 from auto_LiRPA.utils import stop_criterion_min
 # NOTE use newly-designed algorithm for preimage
-from preimage_beta_crown_solver_relu_split import LiRPAConvNet 
+from preimage_beta_crown_solver_relu_split import LiRPAConvNet
 # from lp_mip_solver import FSB_score
 from utils import parse_run_mode
 # from nn4sys_verification import nn4sys_verification
@@ -31,6 +46,8 @@ from preimage_batch_approx_relu_split_dual import relu_bab_parallel_dual
 from preimage_batch_approx_input_split import input_bab_approx_parallel_multi
 
 from read_vnnlib import batch_vnnlib, read_vnnlib
+import torchvision
+from torchvision import transforms
 
 
 def incomplete_verifier(model_ori, data, data_ub=None, data_lb=None, vnnlib=None):
@@ -154,7 +171,7 @@ def mip(saved_bounds, labels_to_verify=None):
 def bab(unwrapped_model, data, targets, y, data_ub, data_lb,
         lower_bounds=None, upper_bounds=None, reference_slopes=None,
         attack_images=None, c=None, all_prop=None, cplex_processes=None,
-        activation_opt_params=None, reference_lA=None, rhs=None, 
+        activation_opt_params=None, reference_lA=None, rhs=None,
         model_incomplete=None, timeout=None, refined_betas=None):
 
     norm = arguments.Config["specification"]["norm"]
@@ -197,15 +214,15 @@ def bab(unwrapped_model, data, targets, y, data_ub, data_lb,
             refined_lower_bounds=lower_bounds, refined_upper_bounds=upper_bounds,
             activation_opt_params=activation_opt_params, reference_lA=reference_lA,
             reference_slopes=reference_slopes, attack_images=attack_images,
-            timeout=timeout, refined_betas=refined_betas, rhs=rhs)   
+            timeout=timeout, refined_betas=refined_betas, rhs=rhs)
     else:
         covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = relu_bab_parallel(
             model, domain, x,y,
             refined_lower_bounds=lower_bounds, refined_upper_bounds=upper_bounds,
             activation_opt_params=activation_opt_params, reference_lA=reference_lA,
             reference_slopes=reference_slopes, attack_images=attack_images,
-            timeout=timeout, refined_betas=refined_betas, rhs=rhs)  
-     
+            timeout=timeout, refined_betas=refined_betas, rhs=rhs)
+
     # else:
     #     covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = relu_bab_parallel(
     #         model, domain, x,y,
@@ -217,7 +234,7 @@ def bab(unwrapped_model, data, targets, y, data_ub, data_lb,
     #     save_path = os.path.join(arguments.Config["preimage"]["result_dir"], 'polytope')
     #     save_file = os.path.join(save_path,'{}_atk_{}'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"]))
     #     with open(save_file, 'wb') as f:
-    #         pickle.dump(preimage_dict, f) 
+    #         pickle.dump(preimage_dict, f)
     return covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num
 
 
@@ -317,7 +334,7 @@ def preimage_workflow(
             this_spec_attack_images = attack_images[:, :, property_idx].view(attack_images.size(1), *attack_images.shape[3:])
         else:
             this_spec_attack_images = None
- 
+
         if arguments.Config["general"]["enable_incomplete_verification"]:
             # extract lower bound by (sorted) init_global_lb and batch size of initial_max_domains
             this_batch_start_idx = property_idx * arguments.Config["bab"]["initial_max_domains"]
@@ -422,6 +439,7 @@ def preimage_workflow(
     #     return 'safe'
 
 
+
 def main():
     print(f'Experiments at {time.ctime()} on {socket.gethostname()}')
     torch.manual_seed(arguments.Config["general"]["seed"])
@@ -456,6 +474,8 @@ def main():
     elif arguments.Config["model"]["path"] is not None:
         arguments.Config["model"]["path"] = os.path.join(parent_dir, arguments.Config["model"]["path"])
         print(arguments.Config["model"]["path"])
+
+
     run_mode, save_path, file_root, example_idx_list, model_ori, vnnlib_all, shape = parse_run_mode()
     bab_ret = []
     select_instance = arguments.Config["data"]["select_instance"]
@@ -521,7 +541,7 @@ def main():
             x, data_max, data_min = x.to(device), data_max.to(device), data_min.to(device)
 
             verified_status = "unknown"
-            verified_success = False                
+            verified_success = False
 
             if arguments.Config["attack"]["pgd_order"] == "before":
                 verified_status, verified_success, attack_images, attack_margins, all_adv_candidates = attack(
@@ -594,13 +614,13 @@ def main():
         else:
             if arguments.Config["preimage"]["compare_split"]:
                 log_file = os.path.join(arguments.Config["preimage"]["result_dir"], '{}_input_enable_smooth_{}.txt'.format(dataset_tp, arguments.Config["preimage"]["smooth_val"]))
-            elif arguments.Config["preimage"]["worst_beta"]: 
+            elif arguments.Config["preimage"]["worst_beta"]:
                 log_file = os.path.join(arguments.Config["preimage"]["result_dir"], '{}_input_enable_{}_beta_{}_worst.txt'.format(dataset_tp, split_input_aligned, dual_param_enabled))
             else:
                 log_file = os.path.join(arguments.Config["preimage"]["result_dir"], '{}_input_enable_{}_beta_{}.txt'.format(dataset_tp, split_input_aligned, dual_param_enabled))
         if dataset_tp == 'vcas':
             with open(log_file, "a") as f:
-                f.write("VCAS-21-{}, Over {}, Under {}, Spec {}, upper_time_loss {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f}  \n".format(arguments.Config["preimage"]["vcas_idx"], preimage_over, preimage_under, 
+                f.write("VCAS-21-{}, Over {}, Under {}, Spec {}, upper_time_loss {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f}  \n".format(arguments.Config["preimage"]["vcas_idx"], preimage_over, preimage_under,
                 arguments.Config["preimage"]["label"], arguments.Config["preimage"]["upper_time_loss"], subdomain_num, time_cost, iter_cov_quota[-1]))
         elif 'MNIST' in dataset_tp:
             if arguments.Config["preimage"]["atk_tp"] == "l_inf":
@@ -611,27 +631,31 @@ def main():
                 with open(log_file, "a") as f:
                     f.write("{}: attack {}, patchLen {}, patchWid {}, pos_h {}, pos_v {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(dataset_tp, arguments.Config["preimage"]["atk_tp"],
                     arguments.Config["preimage"]["patch_len"], arguments.Config["preimage"]["patch_width"],
-                    arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],                                                                                                        
+                    arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],
                     subdomain_num, time_cost, iter_cov_quota[-1]))
             elif arguments.Config["preimage"]["atk_tp"] == "patch_eps":
                 with open(log_file, "a") as f:
                     f.write("Beta {}, {}: attack {}, patch_eps {}, patchLen {}, patchWid {}, pos_h {}, pos_v {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(arguments.Config["solver"]["beta-crown"]["beta"], dataset_tp, arguments.Config["preimage"]["atk_tp"],
                     arguments.Config["preimage"]["patch_eps"],
                     arguments.Config["preimage"]["patch_len"], arguments.Config["preimage"]["patch_width"],
-                    arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],                                                                                                        
+                    arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],
                     subdomain_num, time_cost, iter_cov_quota[-1]))
             elif arguments.Config["preimage"]["atk_tp"] == "l0_rand" or arguments.Config["preimage"]["atk_tp"] == "l0_sensitive":
                 with open(log_file, "a") as f:
                     f.write("Beta {}, {}: attack {}, l0 norm {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(arguments.Config["solver"]["beta-crown"]["beta"], dataset_tp, arguments.Config["preimage"]["atk_tp"],
-                    arguments.Config["preimage"]["l0_norm"],                                                                                                          
+                    arguments.Config["preimage"]["l0_norm"],
                     subdomain_num, time_cost, iter_cov_quota[-1]))
         else:
             with open(log_file, "a") as f:
-                f.write("{}, Over {}, Under {}, Spec {}, Runner {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(dataset_tp, preimage_over, preimage_under, 
+                f.write("{}, Over {}, Under {}, Spec {}, Runner {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(dataset_tp, preimage_over, preimage_under,
                 arguments.Config["preimage"]["label"], arguments.Config["preimage"]["runner_up"], subdomain_num, time_cost, iter_cov_quota[-1]))
         print('--- Log ends ---')
+
+
 
 
 if __name__ == "__main__":
     arguments.Config.parse_config()
     main()
+    # savePt()
+    # printPt()

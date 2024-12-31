@@ -30,6 +30,8 @@ from onnx_opt import compress_onnx
 
 # Import modules for RL agents
 from preimage_model_utils import load_input_info
+from custom_model_data import simple_conv_model
+
 
 def reshape_bounds(lower_bounds, upper_bounds, y, global_lb=None):
     with torch.no_grad():
@@ -340,18 +342,27 @@ def load_model(weights_loaded=True):
         "No model is loaded, please set --model <modelname> for pytorch model or --onnx_path <filename> for onnx model.")
 
     if arguments.Config['model']['name'] is not None:
+        if arguments.Config['model']['name'] == "simple_conv_model":  # 新增判断条件，用于识别simple_conv_model
+            in_channel = 3  # 根据你的数据集实际情况设置输入通道数，这里假设是CIFAR数据集的3通道
+            out_dim = 10  # 根据你的任务需求设置输出维度，比如CIFAR-10分类任务就是10
+            model_ori = simple_conv_model(in_channel, out_dim)
+            model_ori.eval()
+            if not weights_loaded:
+                # print("weights_loaded is false")
+                return model_ori
+        else:
         # You can customize this function to load your own model based on model name.
-        try:
-            model_ori = eval(arguments.Config['model']['name'])()
-        except Exception as e:
-            print(f'Cannot load pytorch model definition "{arguments.Config["model"]["name"]}()". '
-                  f'"{arguments.Config["model"]["name"]}()" must be a callable that returns a torch.nn.Module object.')
-            import traceback
-            traceback.print_exc()
-            exit()
-        model_ori.eval()
-        # print(model_ori)
+            try:
+                model_ori = eval(arguments.Config['model']['name'])
+            except Exception as e:
+                print(f'Cannot load pytorch model definition "{arguments.Config["model"]["name"]}()". '
+                      f'"{arguments.Config["model"]["name"]}()" must be a callable that returns a torch.nn.Module object.')
+                import traceback
+                traceback.print_exc()
+                exit()
 
+        # print(model_ori)
+        model_ori.eval()
         if not weights_loaded:
             return model_ori
 

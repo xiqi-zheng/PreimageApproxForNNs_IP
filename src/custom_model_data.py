@@ -141,4 +141,5 @@ def simple_cifar10(eps):
         raise ValueError('You must specify an epsilon')
     # Rescale epsilon.
     ret_eps = torch.reshape(eps / std, (1, -1, 1, 1))
+    print(X)
     return X, labels, data_max, data_min, ret_eps

@@ -15,14 +15,16 @@ import arguments
 import warnings
 import multiprocessing
 
+from lp_mip_solver import *
+from attack_pgd import attack
+from cuts import Cutter
+
+
 from auto_LiRPA import BoundedModule, BoundedTensor
 from auto_LiRPA.bound_ops import BoundRelu
 from auto_LiRPA.perturbations import *
 from auto_LiRPA.utils import stop_criterion_sum
 
-from lp_mip_solver import *
-from attack_pgd import attack
-from cuts import Cutter
 
 
 total_func_time = total_prepare_time = total_bound_time = total_beta_bound_time = total_transfer_time = total_finalize_time = 0.0
@@ -1670,6 +1672,6 @@ class LiRPAConvNet:
         self.mip_building_proc = mip_building_proc
 
 
-    from lp_mip_solver import (build_solver_model, update_mip_model_fix_relu,
-                            build_the_model_mip_refine, build_the_model_lp, build_the_model_mip,
-                            all_node_split_LP)
+    # from lp_mip_solver import (build_solver_model, update_mip_model_fix_relu,
+    #                         build_the_model_mip_refine, build_the_model_lp, build_the_model_mip,
+    #                         all_node_split_LP)

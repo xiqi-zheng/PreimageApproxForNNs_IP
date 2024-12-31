@@ -3,8 +3,7 @@ preimage:
   label: 0
   runner_up: 4
 model:
-  name:  None
-  onnx_path: "/home/xiyue/LinInv/model_dir/dubinsrejoin.onnx"
+  onnx_path: "model_dir\\dubinsrejoin.onnx"
   path: None
   
 data:

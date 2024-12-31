@@ -6,7 +6,7 @@ preimage:
   atk_tp: l_inf
 model:
   name:  auto_park_2relu
-  path: /home/xiyue/LinInv/model_dir/model_auto_park_auto_park_model_10_2.pt
+  path: ../model_dir/model_auto_park_auto_park_model_10_2.pt
   onnx_path: None
 data:
   dataset: auto_park_part

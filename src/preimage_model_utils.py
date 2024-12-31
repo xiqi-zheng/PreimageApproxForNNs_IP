@@ -4,6 +4,8 @@ import numpy as np
 # NOTE newly added ones
 # import torch.nn.functional as F
 import arguments
+from custom_model_data import simple_cifar10
+
 
 def load_model_simple(model_name, model_path, model_info=None, weights_loaded=True):
     """
@@ -243,6 +245,9 @@ def load_input_bounds(dataset, truth_label, quant, trans):
             # data_max = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).reshape(1, -1)
             # data_min = torch.tensor([[-0.5, -0.5, -0.5, -0.5]]).reshape(1, -1)
         eps = None
+    elif dataset == "Customized(simple_conv_model)":
+        X,labels,data_max,data_min,eps = simple_cifar10(1e-8)
+
     return X, labels, data_max, data_min, eps
 
 def load_input_bounds_numpy(dataset, quant=False, trans=False):

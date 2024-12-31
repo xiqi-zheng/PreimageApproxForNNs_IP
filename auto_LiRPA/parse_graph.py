@@ -1,7 +1,7 @@
 import os
 import torch
 from torch.onnx.utils import _optimize_graph
-from torch.onnx.symbolic_helper import _set_opset_version
+# from torch.onnx.symbolic_helper import _set_opset_version
 from collections import OrderedDict
 from collections import namedtuple
 import re
@@ -144,7 +144,7 @@ def get_output_template(out):
 def parse_module(module, inputs, param_exclude=".*AuxLogits.*", param_include=None):
     params = _get_jit_params(module, param_exclude=param_exclude, param_include=param_include)
     trace, out = torch.jit._get_trace_graph(module, inputs)
-    _set_opset_version(12)
+    # _set_opset_version(12)
     trace_graph = _optimize_graph(
         trace, torch.onnx.OperatorExportTypes.ONNX_ATEN_FALLBACK, params_dict={})
     logger.debug('trace_graph: {}'.format(trace_graph))

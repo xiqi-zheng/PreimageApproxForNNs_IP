@@ -6,6 +6,11 @@
 #########################################################################
 """Interface of cutting plane methods, using GCP-CROWN as the solver."""
 import torch
+import sys
+import os
+
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(parent_dir)
 from auto_LiRPA.bound_ops import *
 import itertools
 

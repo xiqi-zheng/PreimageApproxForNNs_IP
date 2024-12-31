@@ -1,0 +1,21 @@
+preimage:
+  result_dir: "result_dir"
+  over_approx: False
+  under_approx: True
+
+model:
+  name: simple_conv_model
+  path: null
+specification:
+  type: 'bound'
+data:
+  dataset: Customized(simple_conv_model)
+  mean: 0.5
+  std: 0.5
+solver:
+  batch_size: 50
+bab:
+  branching:
+    method: "preimg"
+    input_split:
+      enable: True
