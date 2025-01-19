@@ -66,7 +66,7 @@ class ConfigHandler:
                     hierarchy=h + ["threshold"])
         self.add_argument("--label", type=int, default=1, help='Indicate which label to build input preimage for.',
                           hierarchy=h + ["label"])
-        self.add_argument("--runner_up", type=int, default=0, help='Indicate which label to build safety property for.',
+        self.add_argument("--runner_up", type=int, default=0, help='Indicate which label to build safety property for, for dubinsrejoin indicate the label for throttle actions.',
                           hierarchy=h + ["runner_up"])
         self.add_argument("--vcas_idx", type=int, default=0, help='Indicate VCAS model index to build input preimage for.',
                           hierarchy=h + ["vcas_idx"])    
@@ -156,7 +156,7 @@ class ConfigHandler:
         h = ["model"]
         self.add_argument("--model", type=str, default=None, help='Model name. Will be evaluated as a python statement.',
                           hierarchy=h + ["name"]) # e.g., "mnist_6_100"
-        self.add_argument("--load_model", type=str, default="models/eran/mnist_6_100_nat.pth",
+        self.add_argument("--load_model", type=str, default=None,
                           help='Load pretrained model from this specified path.', hierarchy=h + ["path"]) 
         # e.g., "./models/eran/mnist_6_100_nat.pth"
         self.add_argument("--onnx_path", type=str, default=None, help='Path to .onnx model file.',
