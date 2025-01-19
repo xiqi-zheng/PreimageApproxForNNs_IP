@@ -6,7 +6,6 @@ general:
 model:
   name: mnist_6_100
   path: models/eran/mnist_6_100_nat.pth
-  onnx_path: None
 data:
   dataset: MNIST_ERAN_UN
   start: 0

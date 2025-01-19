@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
 import numpy as np
+import torchvision
+
 # NOTE newly added ones
 # import torch.nn.functional as F
 import arguments
-from custom_model_data import simple_cifar10
 
 
 def load_model_simple(model_name, model_path, model_info=None, weights_loaded=True):
@@ -213,14 +214,6 @@ def load_input_bounds(dataset, truth_label, quant, trans):
         data_max = torch.tensor([[1, 1]]).reshape(1, -1)
         data_min = torch.tensor([[-1, -1]]).reshape(1, -1)
         eps = None
-    elif dataset == "Customized(\"custom_model_data\", \"simple_box_data\")":
-        X = torch.tensor([[0., 0.]]).float()
-        labels = torch.tensor([1]).long()
-        # customized element-wise upper bounds
-        data_max = torch.tensor([[0.25, 0.25]]).reshape(1, -1)
-        # customized element-wise lower bounds
-        data_min = torch.tensor([[-0.25, -0.25]]).reshape(1, -1)
-        eps = None
     elif dataset == "vcas":
         # NOTE use the input info after the normalization as the NN requires
         if quant:
@@ -245,8 +238,22 @@ def load_input_bounds(dataset, truth_label, quant, trans):
             # data_max = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).reshape(1, -1)
             # data_min = torch.tensor([[-0.5, -0.5, -0.5, -0.5]]).reshape(1, -1)
         eps = None
-    elif dataset == "Customized(simple_conv_model)":
-        X,labels,data_max,data_min,eps = simple_cifar10(1e-8)
+    elif dataset == 'CIFAR':
+        # Example: loading CIFAR-10 data using torchvision
+        transform = torchvision.transforms.Compose([
+            torchvision.transforms.ToTensor(),
+            # You can add other transformations if needed
+        ])
+        cifar_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+
+        # Selecting a sample image from CIFAR-10 dataset
+        sample_image, label = cifar_dataset[0]
+        X = sample_image.unsqueeze(0)  # Add a batch dimension
+        labels = torch.tensor([truth_label]).long()  # Use the provided truth_label
+        # Define data_max and data_min with shapes of [1, 3, 32, 32]
+        data_max = torch.ones(1, 3, 32, 32)  # The maximum value of all pixels is 1
+        data_min = torch.zeros(1, 3, 32, 32)  # The minimum value of all pixels is 0
+        eps = None
 
     return X, labels, data_max, data_min, eps
 

@@ -66,7 +66,7 @@ class ConfigHandler:
                     hierarchy=h + ["threshold"])
         self.add_argument("--label", type=int, default=1, help='Indicate which label to build input preimage for.',
                           hierarchy=h + ["label"])
-        self.add_argument("--runner_up", type=int, default=0, help='Indicate which label to build safety property for, for dubinsrejoin indicate the label for throttle actions.',
+        self.add_argument("--runner_up", type=int, default=0, help='Indicate which label to build safety property for.',
                           hierarchy=h + ["runner_up"])
         self.add_argument("--vcas_idx", type=int, default=0, help='Indicate VCAS model index to build input preimage for.',
                           hierarchy=h + ["vcas_idx"])    
@@ -154,9 +154,9 @@ class ConfigHandler:
                           hierarchy=h + ["root_path"])
 
         h = ["model"]
-        self.add_argument("--model", type=str, default=None, help='Model name. Will be evaluated as a python statement.',
+        self.add_argument("--model", type=str, default="simple_conv_mnist", help='Model name. Will be evaluated as a python statement.',
                           hierarchy=h + ["name"]) # e.g., "mnist_6_100"
-        self.add_argument("--load_model", type=str, default=None,
+        self.add_argument("--load_model", type=str, default="model_dir/simple_cnn_mnist.pth",
                           help='Load pretrained model from this specified path.', hierarchy=h + ["path"]) 
         # e.g., "./models/eran/mnist_6_100_nat.pth"
         self.add_argument("--onnx_path", type=str, default=None, help='Path to .onnx model file.',
@@ -186,7 +186,7 @@ class ConfigHandler:
                           help='Onnx graph optimization config.', hierarchy=h + ["onnx_optimization_flags"])
 
         h = ["data"]
-        self.add_argument("--dataset", type=str, default="MNIST_ERAN_UN",
+        self.add_argument("--dataset", type=str, default="MNIST",
                           help="Dataset name. Dataset must be defined in utils.py. For customized data, checkout custom_model_data.py.",
                           hierarchy=h + ["dataset"]) # e.g., "MNIST_ERAN_UN"
         self.add_argument('--num_outputs', type=int, default=10, help="Number of classes for classification problem.",
@@ -215,7 +215,7 @@ class ConfigHandler:
         self.add_argument("--spec_type", type=str, default='lp', choices=['lp', 'bound'],
                           help='Type of verification specification. "lp" = L_p norm, "bounds" = element-wise lower and upper bound provided by dataloader.',
                           hierarchy=h + ["type"])
-        self.add_argument("--robustness_type", type=str, default="runnerup",
+        self.add_argument("--robustness_type", type=str, default="verified-acc",
                           choices=["verified-acc", "runnerup", "clean-acc", "specify-target"],
                           help='For robustness verification: verify against all labels ("verified-acc" mode), or just the runnerup labels ("runnerup" mode), '
                                'or using a specified label in dataset ("speicify-target" mode, only used for oval20). Not used when a VNNLIB spec is used.',

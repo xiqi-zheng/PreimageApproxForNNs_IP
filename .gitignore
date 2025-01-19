@@ -30,6 +30,8 @@ src/test_relu_score_unstable.py
 src/preimage_runnerup_label.py
 src/data
 src/datasets
+./sample_dir
+./result_dir
 
 
 

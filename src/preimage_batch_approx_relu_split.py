@@ -598,6 +598,8 @@ def get_act_vecs(prop_samples, model, dataset_tp):
             pre_relu_layer = ['1', '3']
         elif arguments.Config["model"]["name"] == "mnist_6_100":
             pre_relu_layer = ['2', '4', '6', '8', '10']
+        elif arguments.Config["model"]["name"] == "simple_conv_mnist":
+            pre_relu_layer = ['1', '3', '5']  # conv1, conv2, fc1
     elif dataset_tp == "auto_park":
         pre_relu_layer = ['2']
     elif dataset_tp == "auto_park_part":
@@ -712,12 +714,14 @@ def calc_mask_concrete_samples_from_unstable_idx(x, net, y):
     return mask_sample, score_all, unstable_indices 
 
 def calc_mask_concrete_samples(x, net, y):
+    print("shape of x: ",x.shape)
     sample_num = arguments.Config['preimage']["sample_num"]
     atk_tp = arguments.Config["preimage"]["atk_tp"]
     multi_spec = arguments.Config["preimage"]["multi_spec"]
     x_L, x_U = x.ptb.x_L, x.ptb.x_U
     img_shape = [-1] + list(x.shape[1:])
     img = x.data.reshape(x.shape[0], -1)
+    print("shape of img: ",img.shape)
     x_L = x_L.reshape(x_L.shape[0], -1)
     x_U = x_U.reshape(x_U.shape[0], -1)
     torch.manual_seed(arguments.Config["general"]["seed"])
@@ -730,16 +734,21 @@ def calc_mask_concrete_samples(x, net, y):
             prop_samples = torch.squeeze(prop_samples).reshape(img_shape)
         else:
             prop_samples = img.repeat(sample_num,1)
+            print("shape of prop_samples: ", prop_samples.shape)
             pixel_pos = calc_pixel_pos(atk_tp)
             pixel_pos = torch.tensor(pixel_pos).to(arguments.Config["general"]["device"])
+            print("shape of pixel_pos: ", pixel_pos.shape)
             pixel_lower = x_L[0][pixel_pos]
             pixel_upper = x_U[0][pixel_pos]
+            print("shape of pixel_loawer: ",pixel_lower.shape)
+            print("shape of pixel_upper: ", pixel_upper.shape)
             pixel_vals = Uniform(pixel_lower, pixel_upper).sample([sample_num])
+            print("shape of pixel_vals: ", pixel_vals.shape)
             prop_samples[:, pixel_pos] = pixel_vals
             prop_samples = prop_samples.reshape(img_shape)
     torch.save(prop_samples, os.path.join(arguments.Config['preimage']["sample_dir"], 'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"],atk_tp)))
     model = net.model_ori
-    model.eval()   
+    model.eval()
     # print(model.state_dict())
     device = arguments.Config["general"]["device"]
     model = model.to(device)
@@ -861,25 +870,27 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
     else:
         dataset_tp = arguments.Config["data"]["dataset"]
         if "MNIST" in dataset_tp:
-            sample_dir = os.path.join(sample_dir, 'mnist_6_100')
-        mask_sample_file = os.path.join(sample_dir, f"{dataset_tp}/mask_sample_{dataset_tp}.pkl")
-        score_all_file = os.path.join(sample_dir, f"{dataset_tp}/score_all_{dataset_tp}.pkl")
-        unstable_indices_file = os.path.join(sample_dir, f"{dataset_tp}/unstable_indices_{dataset_tp}.pkl") 
-        # if dataset_tp == "vcas":
-            # upper_time_loss = arguments.Config["preimage"]["upper_time_loss"]
-            # mask_sample_file = os.path.join(sample_dir, f"mask_sample_{dataset_tp}_{upper_time_loss}.pkl")
-            # score_all_file = os.path.join(sample_dir, f"score_all_{dataset_tp}_{upper_time_loss}.pkl")
-            # unstable_indices_file = os.path.join(sample_dir, f"unstable_indices_{dataset_tp}_{upper_time_loss}.pkl") 
-        # else:
-        #     mask_sample_file = os.path.join(sample_dir, f"mask_sample_{dataset_tp}.pkl")
-        #     score_all_file = os.path.join(sample_dir, f"score_all_{dataset_tp}.pkl")
-        #     unstable_indices_file = os.path.join(sample_dir, f"unstable_indices_{dataset_tp}.pkl")
-        with open(mask_sample_file, 'rb') as f:
-            mask_sample_ori = pickle.load(f)
-        with open(score_all_file, 'rb') as f:
-            score_all = pickle.load(f)
-        with open(unstable_indices_file, 'rb') as f:
-            unstable_indices = pickle.load(f)    
+            mask_sample_ori, score_all, unstable_indices = calc_mask_concrete_samples(x, net, y_label)
+        #     sample_dir = os.path.join(sample_dir, 'mnist_6_100')
+        else:
+            mask_sample_file = os.path.join(sample_dir, f"{dataset_tp}/mask_sample_{dataset_tp}.pkl")
+            score_all_file = os.path.join(sample_dir, f"{dataset_tp}/score_all_{dataset_tp}.pkl")
+            unstable_indices_file = os.path.join(sample_dir, f"{dataset_tp}/unstable_indices_{dataset_tp}.pkl")
+            # if dataset_tp == "vcas":
+                # upper_time_loss = arguments.Config["preimage"]["upper_time_loss"]
+                # mask_sample_file = os.path.join(sample_dir, f"mask_sample_{dataset_tp}_{upper_time_loss}.pkl")
+                # score_all_file = os.path.join(sample_dir, f"score_all_{dataset_tp}_{upper_time_loss}.pkl")
+                # unstable_indices_file = os.path.join(sample_dir, f"unstable_indices_{dataset_tp}_{upper_time_loss}.pkl")
+            # else:
+            #     mask_sample_file = os.path.join(sample_dir, f"mask_sample_{dataset_tp}.pkl")
+            #     score_all_file = os.path.join(sample_dir, f"score_all_{dataset_tp}.pkl")
+            #     unstable_indices_file = os.path.join(sample_dir, f"unstable_indices_{dataset_tp}.pkl")
+            with open(mask_sample_file, 'rb') as f:
+                mask_sample_ori = pickle.load(f)
+            with open(score_all_file, 'rb') as f:
+                score_all = pickle.load(f)
+            with open(unstable_indices_file, 'rb') as f:
+                unstable_indices = pickle.load(f)
     score_restore_ori = restore_scores(score_all, unstable_indices, mask_sample_ori)
     tot_ambi_nodes_sample = 0
     for i, layer_mask in enumerate(mask_sample_ori):

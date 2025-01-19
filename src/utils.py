@@ -342,24 +342,19 @@ def load_model(weights_loaded=True):
         "No model is loaded, please set --model <modelname> for pytorch model or --onnx_path <filename> for onnx model.")
 
     if arguments.Config['model']['name'] is not None:
-        if arguments.Config['model']['name'] == "simple_conv_model":  # 新增判断条件，用于识别simple_conv_model
-            in_channel = 3  # 根据你的数据集实际情况设置输入通道数，这里假设是CIFAR数据集的3通道
-            out_dim = 10  # 根据你的任务需求设置输出维度，比如CIFAR-10分类任务就是10
-            model_ori = simple_conv_model(in_channel, out_dim)
-            model_ori.eval()
-            if not weights_loaded:
-                # print("weights_loaded is false")
-                return model_ori
-        else:
         # You can customize this function to load your own model based on model name.
-            try:
-                model_ori = eval(arguments.Config['model']['name'])
-            except Exception as e:
-                print(f'Cannot load pytorch model definition "{arguments.Config["model"]["name"]}()". '
-                      f'"{arguments.Config["model"]["name"]}()" must be a callable that returns a torch.nn.Module object.')
-                import traceback
-                traceback.print_exc()
-                exit()
+        try:
+            model_ori = eval(arguments.Config['model']['name'])
+            if callable(model_ori):  # Make sure the model class is callable
+                model_ori = model_ori()  # Instantiate Model
+            else:
+                raise ValueError(f"{model_ori} is not callable. Check your model definition.")
+        except Exception as e:
+            print(f'Cannot load pytorch model definition "{arguments.Config["model"]["name"]}()". '
+                  f'"{arguments.Config["model"]["name"]}()" must be a callable that returns a torch.nn.Module object.')
+            import traceback
+            traceback.print_exc()
+            exit()
 
         # print(model_ori)
         model_ori.eval()
@@ -369,7 +364,7 @@ def load_model(weights_loaded=True):
         if arguments.Config["model"]["path"] is not None:
             # Load pytorch model
             # You can customize this function to load your own model based on model name.
-            sd = torch.load(arguments.Config["model"]["path"], map_location=torch.device('cpu'))
+            sd = torch.load(arguments.Config["model"]["path"])
             if 'state_dict' in sd:
                 sd = sd['state_dict']
             if isinstance(sd, list):
@@ -554,6 +549,9 @@ def load_generic_dataset(eps_temp=None):
     runnerup = None
     # Rescale epsilon.
     eps_temp = torch.reshape(eps_temp / torch.tensor(arguments.Config["data"]["std"], dtype=torch.get_default_dtype()), (1, -1, 1, 1))
+    print("############################")
+    print(f"X shape: {X.shape}, labels shape: {labels.shape}")
+    print("############################")
 
     return X, labels, data_max, data_min, eps_temp, runnerup
 
@@ -928,7 +926,6 @@ def calc_l0_spec(img, l0_norm, count, dataset="mnist"):
     return specLBs, specUBs, pixel_pos
 
 def construct_vnnlib(X, labels, runnerups, data_max, data_min, perturb_epsilon, target_labels, example_idx_list, model=None):
-
     vnnlib = []
     num_outputs = arguments.Config["data"]["num_outputs"]
     if type(perturb_epsilon) == list:
@@ -946,6 +943,7 @@ def construct_vnnlib(X, labels, runnerups, data_max, data_min, perturb_epsilon, 
         assert arguments.Config["specification"]["norm"] == float("inf")
         x_lower = data_min.flatten(1)
         x_upper = data_max.flatten(1)
+
     elif arguments.Config["specification"]["type"] == 'lp':
         if arguments.Config["specification"]["norm"] == float("inf"):
             if arguments.Config["preimage"]["patch"]:
@@ -971,7 +969,6 @@ def construct_vnnlib(X, labels, runnerups, data_max, data_min, perturb_epsilon, 
 
 
     x_range = torch.stack([x_lower, x_upper], -1).numpy()
-
     for i in range(len(example_idx_list)):
         label = labels[example_idx_list[i]].view(1, 1)
         this_x_range = x_range[i]
@@ -1158,8 +1155,10 @@ def parse_run_mode():
                    arguments.Config["attack"]["pgd_order"], arguments.Config["bab"]["cut"]["cplex_cuts"],
                    arguments.Config["solver"]["multi_class"]["multi_class_method"])
         # Note add the save path to a specific dir
-        save_dir = '/home/xiyue/LinInv/alpha-beta-CROWN/test_relu'
+        # save_dir = '/home/xiyue/LinInv/alpha-beta-CROWN/test_relu'
+        save_dir = '../save_dir'
         save_path = os.path.join(save_dir, save_path)
+        print(save_path)
     else:
         raise NotImplementedError
 

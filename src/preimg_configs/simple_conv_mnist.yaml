@@ -1,0 +1,28 @@
+preimage:
+  sample_dir: "sample_dir"
+  result_dir: "result_dir"
+  over_approx: False
+  under_approx: True
+  threshold: 0.75
+  label: 0
+  instability: False
+  patch: False
+model:
+  name: simple_conv_mnist
+  path: "model_dir/simple_cnn_mnist.pth"
+specification:
+  type: 'lp'
+  epsilon: 0.03
+  robustness_type: "verified-acc"
+data:
+  dataset: MNIST
+  num_outputs: 10
+  mean: [0.0]
+  std: [1.0]
+solver:
+  batch_size: 1
+bab:
+  branching:
+    method: "preimg"
+    input_split:
+      enable: false
