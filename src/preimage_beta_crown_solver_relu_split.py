@@ -729,8 +729,14 @@ class LiRPAConvNet:
                 # for each layer except the last output layer
                 if len(zero_indices_batch[d]):
                     # we set lower = 0 in first half batch, and upper = 0 in second half batch
-                    lower_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d], zero_indices_neuron[d]] = 0.0
-                    upper_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d] + batch, zero_indices_neuron[d]] = 0.0
+                    if arguments.Config["model"]["name"] == "mnist_conv_small":
+                        zero_indices_batch = [torch.as_tensor(t, dtype=torch.long, device=self.net.device) for t in zero_indices_batch]
+                        zero_indices_neuron = [torch.as_tensor(t, dtype=torch.long, device=self.net.device) for t in zero_indices_neuron]
+                        lower_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d], zero_indices_neuron[d]] = 0.0
+                        upper_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d] + batch, zero_indices_neuron[d]] = 0.0
+                    else:
+                        lower_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d], zero_indices_neuron[d]] = 0.0
+                        upper_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d] + batch, zero_indices_neuron[d]] = 0.0
                 new_intermediate_layer_bounds[self.name_dict[d]] = [lower_bounds[d], upper_bounds[d]]
 
         # create new_x here since batch may change
@@ -1179,7 +1185,8 @@ class LiRPAConvNet:
                 mask, lA = self.get_mask_lA_parallel(self.net)
                 history = [[[], []] for _ in range(len(self.net.relus))]
                 slope_opt = self.get_slope(self.net)  # initial with one node only
-            return ub[-1], lb[-1], None, None, None, mask, lA, lb, ub, pre_relu_indices, slope_opt, history, None
+                A = None
+            return ub[-1], lb[-1], None, None, None, mask, lA, A, lb, ub, pre_relu_indices, slope_opt, history, None
         else:
             with torch.no_grad():
                 ret = self.net.compute_bounds(

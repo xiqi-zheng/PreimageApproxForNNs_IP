@@ -218,7 +218,7 @@ class SortedInputDomainList(InputDomainList):
         lb=None,
         uA_list=None,
         ubias_list=None,
-        ub=None
+        ub=None,
     ):
         # check shape consistency and correctness
         batch = len(lb) if lb is not None else len(ub)
@@ -245,19 +245,34 @@ class SortedInputDomainList(InputDomainList):
                         slope_dict[key0] = {}
                         for key1 in slope[key0].keys():
                             slope_dict[key0][key1] = slope[key0][key1][:, :, i*spec_num : (i + 1)*spec_num]
-                dom = InputDomain(
-                    cov_quota=cov_quota_list[i],
-                    target_vol=target_vol_list[i],
-                    lA=lA_list[i],
-                    lbias=lbias_list[i], # these three comes from a batch of spec, therefore no need to *spec_num
-                    lb=lb[i*spec_num: (i + 1)*spec_num],
-                    slope=slope_dict if slope is not None and type(slope) != list else None,
-                    dm_l=dm_l[i*spec_num : (i + 1)*spec_num],
-                    dm_u=dm_u[i*spec_num  : (i + 1)*spec_num],
-                    c=cs[i*spec_num : (i + 1)*spec_num],
-                    threshold=threshold[i*spec_num : (i + 1)*spec_num],
-                    split_idx=(split_idx[i*spec_num : (i + 1)*spec_num] if split_idx is not None else None),
-                )
+                if arguments.Config["preimage"]["patch"]:
+                    dom = InputDomain(
+                        cov_quota=cov_quota_list[i],
+                        target_vol=target_vol_list[i],
+                        lA=lA_list[i],
+                        lbias=lbias_list[i],  # these three comes from a batch of spec, therefore no need to *spec_num
+                        lb=lb[i * spec_num: (i + 1) * spec_num],
+                        slope= slope_dict if slope is not None and type(slope) != list else None,
+                        dm_l=dm_l[i * spec_num: (i + 1) * spec_num],
+                        dm_u=dm_u[i * spec_num: (i + 1) * spec_num],
+                        c=cs[i * spec_num: (i + 1) * spec_num],
+                        threshold=threshold[i * spec_num: (i + 1) * spec_num],
+                        split_idx=split_idx[i],
+                    )
+                else:
+                    dom = InputDomain(
+                        cov_quota=cov_quota_list[i],
+                        target_vol=target_vol_list[i],
+                        lA=lA_list[i],
+                        lbias=lbias_list[i], # these three comes from a batch of spec, therefore no need to *spec_num
+                        lb=lb[i*spec_num: (i + 1)*spec_num],
+                        slope=slope_dict if slope is not None and type(slope) != list else None,
+                        dm_l=dm_l[i*spec_num : (i + 1)*spec_num],
+                        dm_u=dm_u[i*spec_num  : (i + 1)*spec_num],
+                        c=cs[i*spec_num : (i + 1)*spec_num],
+                        threshold=threshold[i*spec_num : (i + 1)*spec_num],
+                        split_idx=(split_idx[i*spec_num : (i + 1)*spec_num] if split_idx is not None else None),
+                    )
                 self.domains.add(dom)
         elif arguments.Config["preimage"]["over_approx"]:
             for i in remaining_index:
@@ -319,17 +334,22 @@ class SortedInputDomainList(InputDomainList):
                             )                        
                     slopes_all.append(item) 
             else:
-                slopes_all = None             
-            if (
-                split_idx is not None
-                and selected_candidate_domain.split_idx is not None
-            ):
-                split_idx.append(selected_candidate_domain.split_idx)
+                slopes_all = None
+
+            if arguments.Config["preimage"]["patch"]:
+                split_idx = selected_candidate_domain.split_idx
             else:
-                split_idx = None
+                if (
+                    split_idx is not None
+                    and selected_candidate_domain.split_idx is not None
+                ):
+                    split_idx.append(selected_candidate_domain.split_idx)
+                else:
+                    split_idx = None
 
         thresholds = torch.stack(thresholds_all).to(device=device, non_blocking=True)
-        split_idx = torch.cat(split_idx) if split_idx is not None else None
+        if not arguments.Config["preimage"]["patch"]:
+            split_idx = torch.cat(split_idx) if split_idx is not None else None
 
         # aggregate C to shape (batch, 1, num_outputs)
         cs = torch.cat(c_all).contiguous().to(device=device, non_blocking=True)

@@ -1,0 +1,38 @@
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 88, Time: 22.986, Coverage: 0.902
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 88, Time: 24.224, Coverage: 0.902 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 88, Time: 26.355, Coverage: 0.902 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 49, Time: 14.636, Coverage: 0.906 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 53, Time: 16.476, Coverage: 0.904 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 53, Time: 16.505, Coverage: 0.904 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1002, Time: 559.578, Coverage: 0.750 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1002, Time: 529.503, Coverage: 0.750 
+MNIST_ERAN: input_split True, attack patch True, patchLen 2, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 2.522, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch True, patchLen 3, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 4.180, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch True, patchLen 3, patchWid 4, pos_h 10, pos_v 12, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 4.213, Coverage: 0.900 
+MNIST_ERAN: input_split True, attack patch True, patchLen 3, patchWid 4, pos_h 10, pos_v 12, bound_prop_method alpha-crown, -- #Subdomain: 3, Time: 4.749, Coverage: 0.967 
+MNIST_ERAN: input_split True, attack patch True, patchLen 2, patchWid 4, pos_h 10, pos_v 12, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 2.313, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch True, patchLen 2, patchWid 4, pos_h 10, pos_v 13, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 3.849, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch True, patchLen 2, patchWid 4, pos_h 10, pos_v 13, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 4.245, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch True, patchLen 2, patchWid 4, pos_h 10, pos_v 13, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 4.032, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 2002, Time: 1844.123, Coverage: 0.776 
+Beta False, MNIST_ERAN: attack patch_eps, patch_eps 0.12, patchLen 4, patchWid 4, pos_h 10, pos_v 10, -- #Subdomain: 1, Time: 2.684, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 2.695, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 147.143, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 2.904, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 1, Time: 2.419, Coverage: 1.000 
+Beta False, MNIST_ERAN: epsilon 0.12, Spec 1 -- #Subdomain: 1, Time: 11.495, Coverage: 1.000 
+Beta False, MNIST_ERAN: epsilon 0.12, Spec 1 -- #Subdomain: 1, Time: 3.947, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 14, Time: 7.579, Coverage: 0.900 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 57, Time: 17.929, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, eps 0.9 -- #Subdomain: 57, Time: 18.189, Coverage: 1.000 
+Beta False, MNIST_ERAN: epsilon 0.3, Spec 1 -- #Subdomain: 10, Time: 62.369, Coverage: 0.100 
+Beta False, MNIST_ERAN: epsilon 0.3, Spec 1 -- #Subdomain: 6, Time: 868.505, Coverage: 1.000 
+Beta False, MNIST_ERAN: epsilon 0.3, Spec 1 -- #Subdomain: 6, Iteration: 18973, Time: 467.171, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, eps 0.9 -- #Subdomain: 57, Iteration: 57, Time: 19.970, Coverage: 1.000 
+Beta False, MNIST_ERAN: epsilon 0.3, Spec 1 -- #Subdomain: 1, Iteration: 0, Time: 0.106, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, eps 0.9 -- #Subdomain: 57, Iteration: 57, Time: 19.253, Coverage: 1.000 
+MNIST_ERAN: input_split True, attack patch_eps True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, eps 0.1 -- #Subdomain: 1, Iteration: 0, Time: 2.481, Coverage: 1.000 
+MNIST_ERAN: input_split False, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 10, bound_prop_method alpha-crown, -- #Subdomain: 2, Iteration: 179, Time: 7.427, Coverage: 1.000 
+MNIST_ERAN: input_split False, attack patch True, patchLen 4, patchWid 4, pos_h 10, pos_v 12, bound_prop_method alpha-crown, -- #Subdomain: 1, Iteration: 345, Time: 8.549, Coverage: 1.000 
+MNIST_ERAN: input_split False, attack patch True, patchLen 4, patchWid 4, pos_h 14, pos_v 14, bound_prop_method alpha-crown, -- #Subdomain: 1, Iteration: 0, Time: 4.718, Coverage: 1.000 
+MNIST_ERAN: input_split False, attack patch True, patchLen 4, patchWid 4, pos_h 11, pos_v 12, bound_prop_method alpha-crown, -- #Subdomain: 2, Iteration: 305, Time: 8.154, Coverage: 1.000 

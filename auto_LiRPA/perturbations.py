@@ -5,12 +5,18 @@ import os
 import torch
 from torch import autograd
 from torch.distributions import Uniform
+
+from src.utils import calc_pixel_pos
 from .utils import logger, eyeC
 from .patches import Patches, patches_to_matrix
 from .linear_bound import LinearBound
 # import preimage_arguments
 import arguments
 import pickle
+
+global count
+count = 0
+
 def load_act_vecs(dataset_tp):
     # if arguments.Config["model"]["onnx_path"] is None:
     act_file = os.path.join(arguments.Config['preimage']["sample_dir"], 'act_vec_{}_{}.pkl'.format(dataset_tp, arguments.Config["preimage"]["atk_tp"]))
@@ -266,7 +272,8 @@ class PerturbationLpNorm(Perturbation):
                 extra_A = torch.einsum('ijk,ikl->ijl', beta, beta_coeffs)
                 # Merge beta into the bias term. Output has size (batch, spec).
                 extra_bias = torch.einsum('ijk,ik->ij', beta, beta_bias)
-        if self.norm == np.inf:
+        if self.norm == np.inf and not arguments.Config["preimage"]["patch"]:
+        # if self.norm == np.inf:
             # For Linfinity distortion, when an upper and lower bound is given, we use them instead of eps.
             # if arguments.Config["model"]["onnx_path"] is None:
             #     sample_file = os.path.join(arguments.Config["preimage"]["sample_dir"], 'sample_{}.pt'.format(arguments.Config["data"]["dataset"]))
@@ -279,21 +286,39 @@ class PerturbationLpNorm(Perturbation):
             #         samples = np.load(os.path.join(arguments.Config["preimage"]["sample_dir"], "sample_{}.npy".format(arguments.Config["data"]["dataset"])))
             #     prop_samples = np.squeeze(samples, axis=1)
             #     prop_samples = torch.tensor(prop_samples).to(arguments.Config["general"]["device"])
+
             x_L, x_U = self.get_input_bounds(x, A)
-            # if torch.all(x_L >= x_U):
-            # print('check', x_L, '\n', x_U)                
+            # if arguments.Config["preimage"]["patch"]:
+            #     x_U = torch.where(x_L == x_U, x_U + 1e-6, x_U)
+
             torch.manual_seed(arguments.Config["general"]["seed"])
             sample_num = arguments.Config["preimage"]["sample_num"]
             prop_samples = Uniform(x_L, x_U).sample([sample_num])
-            # prop_samples = torch.transpose(prop_samples, 0, 1) 
+            # torch.manual_seed(arguments.Config["general"]["seed"])
+            # sample_num = arguments.Config["preimage"]["sample_num"]
+            # if arguments.Config["preimage"]["patch"]:
+            #     x_U = torch.where(x_L == x_U, x_U + 1e-6, x_U)
+            # prop_samples = Uniform(x_L, x_U).sample([sample_num])
+            # prop_samples = torch.transpose(prop_samples, 0, 1)
             # prop_samples.requires_grad = x_L.requires_grad
             bound = None
             if not isinstance(A, eyeC):
                 for i in range(prop_samples.shape[1]):
-                    samples_tmp = prop_samples[:,i,:]
-                    samples_tmp = torch.transpose(samples_tmp,0,1)
+                    # if arguments.Config["data"]["dataset"] == "MNIST_ERAN" and arguments.Config["preimage"]["patch"]:
+                    #     samples_tmp = prop_samples
+                    # else:
+                    samples_tmp = prop_samples[:, i,:]
+                        # samples_tmp = torch.transpose(samples_tmp,0,1)
+                    samples_tmp = samples_tmp.view(samples_tmp.shape[0], -1, 1)
+                    # samples_tmp = torch.transpose(samples_tmp, 0, 1)
                     if bound is None:
+                        # print("shape of A[i]: ", A[i].shape)
+                        # print("shape of sample_tmp", samples_tmp.shape)
+                        global count
+                        count = count + 1
+                        # print(count)
                         bound = A[i].matmul(samples_tmp)+bias[i]
+
                     else:
                         bound_tmp = A[i].matmul(samples_tmp)+bias[i]
                         bound = torch.cat((bound, bound_tmp))
@@ -310,6 +335,36 @@ class PerturbationLpNorm(Perturbation):
                 # A is an identity matrix. No need to do this matmul.
                 # bound = center + sign * diff
                 bound = prop_samples.unsqueeze(0)
+        if arguments.Config["preimage"]["patch"]:
+
+            patch_len = arguments.Config["preimage"]["patch_len"]
+            patch_width = arguments.Config["preimage"]["patch_width"]
+            atk_tp = arguments.Config["preimage"]["atk_tp"]
+            dataset = arguments.Config["data"]["dataset"]
+
+            sample_file = os.path.join(
+                arguments.Config["preimage"]["sample_dir"],
+                f"sample_{dataset}_{atk_tp}_size_{patch_len}_{patch_width}.pt"
+            )
+            prop_samples = torch.load(sample_file)
+            bound = None
+            if not isinstance(A, eyeC):
+                for i in range(prop_samples.shape[1]):
+                    samples_tmp = prop_samples[:, i, :]
+                    # samples_tmp = torch.transpose(samples_tmp,0,1)
+                    samples_tmp = samples_tmp.view(samples_tmp.shape[0], -1, 1)
+                    # samples_tmp = torch.transpose(samples_tmp, 0, 1)
+                    if bound is None:
+
+                        bound = A[i].matmul(samples_tmp) + bias[i]
+                    else:
+                        bound_tmp = A[i].matmul(samples_tmp) + bias[i]
+                        bound = torch.cat((bound, bound_tmp))
+
+
+
+
+
         else:
             assert extra_constr is None
             x = x.reshape(x.shape[0], -1, 1)
@@ -349,7 +404,11 @@ class PerturbationLpNorm(Perturbation):
         if self.norm == np.inf:
             # For Linfinity distortion, when an upper and lower bound is given, we use them instead of eps.
             if arguments.Config["model"]["onnx_path"] is None:
-                sample_file = os.path.join(arguments.Config["preimage"]["sample_dir"], 'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"]))
+                if arguments.Config["preimage"]["patch"]:
+                    sample_file = os.path.join(arguments.Config["preimage"]["sample_dir"], 'sample_{}_{}_size_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"],
+                                                                                                                arguments.Config["preimage"]["patch_len"],arguments.Config["preimage"]["patch_width"]))
+                else:
+                    sample_file = os.path.join(arguments.Config["preimage"]["sample_dir"], 'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"]))
                 prop_samples = torch.load(sample_file)
                 prop_samples = prop_samples.reshape(prop_samples.shape[0], -1)
                 # sample_left_idx_file = os.path.join(arguments.Config["preimage"]["sample_dir"],'sample_left_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"]))

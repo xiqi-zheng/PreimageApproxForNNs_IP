@@ -204,10 +204,20 @@ def bab(unwrapped_model, data, targets, y, data_ub, data_lb,
     if cut_enabled:
         model.set_cuts(model_incomplete.A_saved, x, lower_bounds, upper_bounds)
 
+
     if arguments.Config["bab"]["branching"]["input_split"]["enable"]:
-        covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = input_bab_approx_parallel_multi(
-            model, domain, x, model_ori=unwrapped_model, all_prop=all_prop,
-            rhs=rhs, timeout=timeout, branching_method=arguments.Config["bab"]["branching"]["method"])
+        # Todo: to tackle general image dataset
+        if arguments.Config["preimage"]["patch"]:
+            covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num, num_iter = input_bab_approx_parallel_multi(
+                model, domain, x, y, model_ori=unwrapped_model, all_prop=all_prop,
+                rhs=rhs, timeout=timeout, branching_method=arguments.Config["bab"]["branching"]["method"], input_patch_image=True)
+        else:
+            covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num, num_iter = input_bab_approx_parallel_multi(
+                model, domain, x, model_ori=unwrapped_model, all_prop=all_prop,
+                rhs=rhs, timeout=timeout, branching_method=arguments.Config["bab"]["branching"]["method"])
+        # covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = input_bab_approx_parallel_multi(
+        #     model, domain, x, model_ori=unwrapped_model, all_prop=all_prop,
+        #     rhs=rhs, timeout=timeout, branching_method=arguments.Config["bab"]["branching"]["method"])
     elif arguments.Config["solver"]["beta-crown"]["beta"]:
         covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = relu_bab_parallel_dual(
             model, domain, x,y,
@@ -216,7 +226,7 @@ def bab(unwrapped_model, data, targets, y, data_ub, data_lb,
             reference_slopes=reference_slopes, attack_images=attack_images,
             timeout=timeout, refined_betas=refined_betas, rhs=rhs)
     else:
-        covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = relu_bab_parallel(
+        covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num, num_iter = relu_bab_parallel(
             model, domain, x,y,
             refined_lower_bounds=lower_bounds, refined_upper_bounds=upper_bounds,
             activation_opt_params=activation_opt_params, reference_lA=reference_lA,
@@ -235,7 +245,7 @@ def bab(unwrapped_model, data, targets, y, data_ub, data_lb,
     #     save_file = os.path.join(save_path,'{}_atk_{}'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"]))
     #     with open(save_file, 'wb') as f:
     #         pickle.dump(preimage_dict, f)
-    return covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num
+    return covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num, num_iter
 
 
 def update_parameters(model, data_min, data_max):
@@ -316,9 +326,12 @@ def preimage_workflow(
         start_time_bab = time.time()
 
         x_range = torch.tensor(properties[0], dtype=torch.get_default_dtype())
+        print("shape of x_range: ", x_range.shape)
         data_min = x_range.select(-1, 0).reshape(vnnlib_shape)
         data_max = x_range.select(-1, 1).reshape(vnnlib_shape)
         x = x_range.mean(-1).reshape(vnnlib_shape)  # only the shape of x is important.
+        print("shape of x: ", x.shape)
+
         target_label_arrays = list(properties[1])  # properties[1]: (c, rhs, y, pidx)
 
         assert len(target_label_arrays) == 1
@@ -415,13 +428,13 @@ def preimage_workflow(
             assert arguments.Config["general"]["complete_verifier"] == "bab"  # for MIP and BaB-Refine.
             assert not arguments.Config["bab"]["attack"]["enabled"], "BaB-attack must be used with incomplete verifier."
             # input split also goes here directly
-            covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num = bab(
+            covered, preimage_dict, nb_visited, time_cost, iter_cov_quota, subdomain_num, num_iter = bab(
                 model_ori, x, pidx, y, data_ub=data_max, data_lb=data_min, c=c,
                 all_prop=target_label_arrays, cplex_processes=cplex_processes,
                 rhs=rhs, timeout=timeout, attack_images=this_spec_attack_images)
             print("#Subdomain: {}, \n Coverage: {:.3f}, \n Time cost: {:.3f}".format(subdomain_num, iter_cov_quota[-1], time_cost))
             # bab_ret.append([index, l, nodes, time.time() - start_time_bab, pidx])
-    return subdomain_num, time_cost, iter_cov_quota
+    return subdomain_num, time_cost, iter_cov_quota, num_iter
         # # terminate the corresponding cut inquiry process if exists
         # if cplex_cuts:
         #     solved_c_rows.append(c)
@@ -536,7 +549,7 @@ def main():
 
             model_ori = model_ori.to(device)
             x, data_max, data_min = x.to(device), data_max.to(device), data_min.to(device)
-
+            # print("shape of x in main: ", x.shape)
             verified_status = "unknown"
             verified_success = False
 
@@ -579,7 +592,8 @@ def main():
             # BaB bounds. (not do bab if unknown by mip solver for now)
             if not verified_success and arguments.Config["general"]["complete_verifier"] != "skip" and verified_status != "unknown-mip":
                 batched_vnnlib = batch_vnnlib(vnnlib)
-                subdomain_num, time_cost, iter_cov_quota  = preimage_workflow(
+
+                subdomain_num, time_cost, iter_cov_quota, num_iter = preimage_workflow(
                     model_ori, model_incomplete, batched_vnnlib, vnnlib, vnnlib_shape,
                     init_global_lb, lower_bounds, upper_bounds, new_idx,
                     timeout_threshold=timeout_threshold - (time.time() - start_time),
@@ -622,21 +636,26 @@ def main():
         elif 'MNIST' in dataset_tp:
             if arguments.Config["preimage"]["atk_tp"] == "l_inf":
                 with open(log_file, "a") as f:
-                    f.write("Beta {}, {}: epsilon {}, Spec {} -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(arguments.Config["solver"]["beta-crown"]["beta"], dataset_tp, arguments.Config["specification"]["epsilon"],
-                    arguments.Config["preimage"]["label"], subdomain_num, time_cost, iter_cov_quota[-1]))
+                    f.write("Beta {}, {}: epsilon {}, Spec {} -- #Subdomain: {}, Iteration: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(arguments.Config["solver"]["beta-crown"]["beta"], dataset_tp, arguments.Config["specification"]["epsilon"],
+                    arguments.Config["preimage"]["label"], subdomain_num, num_iter,time_cost, iter_cov_quota[-1]))
             elif arguments.Config["preimage"]["atk_tp"] == "patch":
                 with open(log_file, "a") as f:
-                    f.write("{}: attack {}, patchLen {}, patchWid {}, pos_h {}, pos_v {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(dataset_tp, arguments.Config["preimage"]["atk_tp"],
+                    f.write("{}: input_split {}, attack {} {}, patchLen {}, patchWid {}, pos_h {}, pos_v {}, bound_prop_method {}, -- #Subdomain: {}, Iteration: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(dataset_tp, split_input_aligned,arguments.Config["preimage"]["atk_tp"], arguments.Config["preimage"]["patch"],
                     arguments.Config["preimage"]["patch_len"], arguments.Config["preimage"]["patch_width"],
                     arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],
-                    subdomain_num, time_cost, iter_cov_quota[-1]))
+                    arguments.Config["solver"]["bound_prop_method"],
+                    subdomain_num,num_iter,time_cost, iter_cov_quota[-1]))
             elif arguments.Config["preimage"]["atk_tp"] == "patch_eps":
                 with open(log_file, "a") as f:
-                    f.write("Beta {}, {}: attack {}, patch_eps {}, patchLen {}, patchWid {}, pos_h {}, pos_v {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(arguments.Config["solver"]["beta-crown"]["beta"], dataset_tp, arguments.Config["preimage"]["atk_tp"],
-                    arguments.Config["preimage"]["patch_eps"],
-                    arguments.Config["preimage"]["patch_len"], arguments.Config["preimage"]["patch_width"],
-                    arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],
-                    subdomain_num, time_cost, iter_cov_quota[-1]))
+                    f.write(
+                        "{}: input_split {}, attack {} {}, patchLen {}, patchWid {}, pos_h {}, pos_v {}, bound_prop_method {}, eps {} -- #Subdomain: {}, Iteration: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(
+                            dataset_tp, split_input_aligned, arguments.Config["preimage"]["atk_tp"],
+                            arguments.Config["preimage"]["patch"],
+                            arguments.Config["preimage"]["patch_len"], arguments.Config["preimage"]["patch_width"],
+                            arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"],
+                            arguments.Config["solver"]["bound_prop_method"],
+                            arguments.Config["preimage"]["patch_eps"],
+                            subdomain_num,num_iter, time_cost, iter_cov_quota[-1]))
             elif arguments.Config["preimage"]["atk_tp"] == "l0_rand" or arguments.Config["preimage"]["atk_tp"] == "l0_sensitive":
                 with open(log_file, "a") as f:
                     f.write("Beta {}, {}: attack {}, l0 norm {}, -- #Subdomain: {}, Time: {:.3f}, Coverage: {:.3f} \n".format(arguments.Config["solver"]["beta-crown"]["beta"], dataset_tp, arguments.Config["preimage"]["atk_tp"],

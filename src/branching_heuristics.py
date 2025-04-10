@@ -176,13 +176,15 @@ def choose_node_parallel_preimg(mask_sample, score_relus, lower_bounds, upper_bo
     decision = [[] for _ in range(batch)]
     # score has been calculated before
     random_dict = {}
+    batch = mask[0].shape[0]
     for b in range(batch):
         mask_item = [m[b] for m in mask]
-        new_score = [score_relus[j][b] for j in range(len(score_relus))]
+        # new_score = [score_relus[j][b] for j in range(len(score_relus))]
+        new_score = [score_relus[j][b].view(-1) for j in range(len(score_relus))]
         # So the difference from other score is that the score here is only the number of unstable neurons
-        split_depth = min(split_depth, new_score[0].shape[0]) 
+        split_depth = min(split_depth, new_score[0].shape[0])
+        # max_info = [torch.topk(s, split_depth, 0) for s in padded_score]
         max_info = [torch.topk(i, split_depth, 0) for i in new_score]
-
         max_info_index = [a[1] for a in max_info]
         max_info = [a[0] for a in max_info] # [num_layer, split_depth]
 
@@ -194,7 +196,11 @@ def choose_node_parallel_preimg(mask_sample, score_relus, lower_bounds, upper_bo
 
             # if decision_layer != sparsest_layer:# and max_info[decision_layer][0].item() > decision_threshold:
             decision[b].append((decision_layer, decision_index))
-            mask_item[decision_layer][decision_index] = 0
+            # mask_item[decision_layer][decision_index] = 0
+            # Flatten can set the corresponding position
+            flat_mask = mask_item[decision_layer].view(-1)
+            flat_mask[decision_index] = 0
+            mask_item[decision_layer] = flat_mask.view_as(mask_item[decision_layer])
             # else:
                 # min_info = [[i, torch.min(intercept_tb[i][b], 0)] for i in range(len(intercept_tb)) if
                 #             torch.min(intercept_tb[i][b]) < -1e-4]

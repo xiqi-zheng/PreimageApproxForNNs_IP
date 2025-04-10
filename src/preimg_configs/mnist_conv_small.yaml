@@ -1,13 +1,10 @@
 model:
   name: mnist_conv_small
-  path: models/eran/mnist_conv_small_nat.pth
+  path: D:\IP\Github\PreimageApproxForNNs\src\models\eran\mnist_conv_small_nat.pth
 data:
   dataset: MNIST_ERAN
-  num_outputs: 10
 specification:
   epsilon: 0.12
-  type: lp
-  robustness_type: runnerup
 attack:
   pgd_restarts: 100
 solver:

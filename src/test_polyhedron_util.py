@@ -71,6 +71,7 @@ def post_process_greedy_A(A_dict):
                 if v is not None:
                     if k == 'lA' or k == 'uA':
                         if "MNIST" in arguments.Config["data"]["dataset"]:
+                            # Reshape the tensor to (batch_size, num_constraints, -1)?.
                             v = v.reshape(v.shape[0],v.shape[1],-1)
                             linear_rep_dict_multi[k] = v.cpu().detach().numpy()      
                         else:              
@@ -122,6 +123,9 @@ def post_process_A_dict_relu(A_dict_relus):
 
 # Calculate the subregion volume    
 def calc_total_sub_vol(dm_l, dm_u):
+    if arguments.Config["data"]["dataset"] == "MNIST" or arguments.Config["data"]["dataset"] == "MNIST_ERAN":
+        dm_l = dm_l.view(1, -1)
+        dm_u = dm_u.view(1, -1)
     total_sub_vol = 1
     in_dim = dm_l.shape[-1]
     dm_shape = dm_l.shape
@@ -129,7 +133,7 @@ def calc_total_sub_vol(dm_l, dm_u):
     assert len(dm_shape) == 2 or len(dm_shape) == 1
     if len(dm_shape) == 2:
         dm_diff = dm_u[0] - dm_l[0]
-        if arguments.Config["data"]["dataset"] == "vcas":
+        if arguments.Config["data"]["dataset"] == "vcas" or arguments.Config["data"]["dataset"] == "MNIST" or arguments.Config["data"]["dataset"] == "MNIST_ERAN":
             for i in range(in_dim):
                 # if i != 2:
                 total_sub_vol = total_sub_vol * dm_diff[i]
@@ -165,7 +169,12 @@ def calc_input_coverage_initial_image_under(A_b_dict, label):
                 samples = np.load(os.path.join(sample_dir, f"sample_{dataset_tp}.npy"))
             samples = np.squeeze(samples, axis=1)
     elif arguments.Config["specification"]["type"] == 'lp':
-        samples = torch.load(os.path.join(sample_dir, 'sample_{}_{}.pt'.format(dataset_tp, atk_tp)))
+        if 'patch' in atk_tp:
+            patch_len = arguments.Config["preimage"]["patch_len"]
+            patch_width = arguments.Config["preimage"]["patch_width"]
+            samples = torch.load(os.path.join(sample_dir, 'sample_{}_{}_size_{}_{}.pt'.format(dataset_tp, atk_tp,patch_len,patch_width)))
+        else:
+            samples = torch.load(os.path.join(sample_dir, 'sample_{}_{}.pt'.format(dataset_tp, atk_tp)))
     if arguments.Config["model"]["onnx_path"] is None:
         if "Customized" in arguments.Config["data"]["dataset"]:  
             model = load_model(weights_loaded=False)
@@ -205,7 +214,10 @@ def calc_input_coverage_initial_image_under(A_b_dict, label):
                 else:
                     idxs_True = idxs_True.intersection(idxs_tmp)
         else:
-            idxs_True = np.where(result>=0)[0]
+            if arguments.Config["preimage"]["patch"]:
+                idxs_True = np.where(result >= 0)[1]
+            else:
+                idxs_True = np.where(result >= 0)[0]
         cov_quota = len(idxs_True)/len(idxs)
         print("Coverage quota {}/{}:  {:.3f}".format(len(idxs_True), len(idxs), cov_quota))
     else:
@@ -455,8 +467,13 @@ def calc_relu_refine_approx_coverage_image_under(A, label, sample_left_idx,sampl
                 samples = np.load(os.path.join(sample_dir, f"sample_{dataset_tp}.npy"))
             samples = np.squeeze(samples, axis=1)
     elif arguments.Config["specification"]["type"] == 'lp':
-        samples = torch.load(os.path.join(arguments.Config['preimage']["sample_dir"], 'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"])))
-    if arguments.Config["model"]["onnx_path"] is None:   
+        if arguments.Config["preimage"]["patch"]:
+            samples = torch.load(os.path.join(arguments.Config["preimage"]["sample_dir"], 'sample_{}_{}_size_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"],
+                                                                                                                      arguments.Config["preimage"]["patch_len"],arguments.Config["preimage"]["patch_width"])))
+        else:
+            samples = torch.load(os.path.join(arguments.Config["preimage"]["sample_dir"], 'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["atk_tp"])))
+
+    if arguments.Config["model"]["onnx_path"] is None:
         if "Customized" in dataset_tp:
             model = load_model(weights_loaded=False)
         else:
@@ -1138,7 +1155,7 @@ def calc_Hrep_coverage_multi_spec_pairwise_over(A_b_dict, dm_l_all, dm_u_all, sp
     return cov_input_idx_all        
 
 # In the all potential feature split case, we need the cov_quota for each pairwise subdomain, not the overall for all domains
-def calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict, dm_l_all, dm_u_all, spec_dim):
+def calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict, dm_l_all, dm_u_all, spec_dim,x = None):
     torch.manual_seed(arguments.Config["general"]["seed"])
     dataset_tp = arguments.Config["data"]["dataset"]  
     sample_num = arguments.Config["preimage"]["sample_num"]
@@ -1169,6 +1186,7 @@ def calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict, dm_l_all, dm_u_all, s
         # else:
             dm_vol = calc_total_sub_vol(dm_l, dm_u)
             # total_vol += dm_vol
+
             samples = Uniform(dm_l, dm_u).sample([bisec_sample_num])
             # tmp_samples = np.random.uniform(low=dm_l,high=dm_u,size=(bisec_sample_num, len(dm_l)))
             # data = torch.tensor(tmp_samples, dtype=torch.get_default_dtype())
@@ -1183,7 +1201,7 @@ def calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict, dm_l_all, dm_u_all, s
                 samples_idxs_T = np.where(pred_label_T == label_T)[0]
                 samples_eval_idxs = np.intersect1d(samples_idxs_R, samples_idxs_T)
             else:
-                predicted = model(samples).argmax(dim=1).cpu().detach().numpy()    
+                predicted = model(samples).argmax(dim=1).cpu().detach().numpy()
                 samples_eval_idxs = np.where(predicted==label)[0]
             target_num = len(samples_eval_idxs)
             target_vol = dm_vol * target_num / bisec_sample_num
@@ -1230,7 +1248,88 @@ def calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict, dm_l_all, dm_u_all, s
         # total_target_vol = total_vol * total_num / sample_num
         cov_input_idx_all[i].append((total_target_vol, cov_quota, total_reward))
         # Therefore, for each idx i, it consists of the cov_ratio for each bisection and the overall of splitting wrt i-th input feat.
-    return cov_input_idx_all    
+    return cov_input_idx_all
+
+def calc_patch_coverage_for_input_split(label, A_b_dict_multi):
+    dataset_tp = arguments.Config["data"]["dataset"]
+    sample_dir = arguments.Config["preimage"]["sample_dir"]
+    patch_len = arguments.Config["preimage"]["patch_len"]
+    patch_width = arguments.Config["preimage"]["patch_width"]
+    atk_tp = arguments.Config["preimage"]["atk_tp"]
+    sample_num = arguments.Config["preimage"]["sample_num"]
+    samples = torch.load(os.path.join(sample_dir, 'sample_{}_{}_size_{}_{}.pt'.format(
+        dataset_tp, atk_tp,
+        patch_len, patch_width)))
+    if arguments.Config["model"]["onnx_path"] is None:
+        if "Customized" in dataset_tp:
+            model = load_model(weights_loaded=False)
+        else:
+            model = load_model()
+        device = arguments.Config["general"]["device"]
+        model = model.to(device)
+        sample_label_left = samples[:, 0]
+        sample_label_right = samples[:, 1]
+        left_predicted = model(sample_label_left).argmax(dim=1).cpu().detach().numpy()
+        right_predicted = model(sample_label_right).argmax(dim=1).cpu().detach().numpy()
+    sample_label_left_idx = set(np.where(left_predicted == label)[0])
+    sample_label_right_idx = set(np.where(right_predicted == label)[0])
+    cov_subdomain_info = []
+    if len(sample_label_left_idx) > 0:
+        target_vol_left = len(sample_label_left_idx)/sample_num
+        print('Label: {}, Split left, Num: {}'.format(label, len(sample_label_right_idx)))
+        sample_temp = sample_label_left[list(sample_label_left_idx)]
+        if arguments.Config["model"]["onnx_path"] is None:
+            sample_temp = sample_temp.reshape(sample_temp.shape[0], -1)
+            sample_temp = sample_temp.cpu().detach().numpy()
+        mat = A_b_dict_multi['lA'][0]
+        bias = A_b_dict_multi['lbias'][0]
+        print('mat shape: {}, samples_T shape: {}'.format(mat.shape, sample_temp.T.shape))
+        result = np.matmul(mat, sample_temp.T)+bias
+        # NOTE spec dim to be dealt with future
+        if len(result) > 1:
+            idxs_True = None
+            for const_dim in range(len(result)):
+                idxs_tmp = set(np.where(result[const_dim]>=0)[0])
+                if idxs_True is None:
+                    idxs_True = idxs_tmp
+                else:
+                    idxs_True = idxs_True.intersection(idxs_tmp)
+        else:
+            idxs_True = np.where(result>=0)[1]
+        cov_subdomain_info.append((target_vol_left, len(idxs_True)/len(sample_label_left_idx)))
+    else:
+        cov_subdomain_info.append((0,0))
+        print('No samples evaluted follow this left relu split history')
+    if len(sample_label_right_idx) > 0:
+        target_vol_right = len(sample_label_right_idx)/sample_num
+        print('Label: {}, Split right, Num: {}'.format(label, len(sample_label_right_idx)))
+        sample_temp = sample_label_right[list(sample_label_right_idx)]
+        if arguments.Config["model"]["onnx_path"] is None:
+            sample_temp = sample_temp.reshape(sample_temp.shape[0], -1)
+            sample_temp = sample_temp.cpu().detach().numpy()
+        mat = A_b_dict_multi['lA'][1]
+        bias = A_b_dict_multi['lbias'][1]
+        print('mat shape: {}, samples_T shape: {}'.format(mat.shape, sample_temp.T.shape))
+        result = np.matmul(mat, sample_temp.T)+bias
+        # NOTE spec dim to be dealt with future
+        if len(result) > 1:
+            idxs_True = None
+            for const_dim in range(len(result)):
+                idxs_tmp = set(np.where(result[const_dim] >= 0)[0])
+                if idxs_True is None:
+                    idxs_True = idxs_tmp
+                else:
+                    idxs_True = idxs_True.intersection(idxs_tmp)
+        else:
+            idxs_True = np.where(result >= 0)[1]
+        cov_subdomain_info.append((target_vol_right, len(idxs_True)/len(sample_label_right_idx)))
+    else:
+        cov_subdomain_info.append((0,0))
+        print('No samples evaluted follow this right relu split history')
+
+
+    return [cov_subdomain_info]
+
 
 def calc_mc_coverage_multi_spec_pairwise_under(A_b_dict, dm_l_all, dm_u_all, spec_dim):
     torch.manual_seed(arguments.Config["general"]["seed"])
@@ -1411,6 +1510,28 @@ def calc_input_coverage_initial_input_over(A_b_dict):
         cov_quota = 0
     return target_vol, cov_quota
 
+def add_patch_attack(samples, epsilon = 0.3):
+    patch_x_start = arguments.Config["preimage"]["patch_h"]
+    patch_y_start = arguments.Config["preimage"]["patch_v"]
+    patch_len = arguments.Config["preimage"]["patch_len"]
+    patch_width = arguments.Config["preimage"]["patch_width"]
+
+    patch_x_end = patch_x_start + patch_len
+    patch_y_end = patch_y_start + patch_width
+
+    print(f"Applying Patch Attack on region: X({patch_x_start}:{patch_x_end}), Y({patch_y_start}:{patch_y_end})")
+
+    batch_size = samples.shape[0]
+    # Only modify the values of samples in the patch area
+    perturbed_samples = samples.clone()
+    # Add disturbance to the specified patch area
+    perturbed_samples[:, :, patch_x_start:patch_x_end, patch_y_start:patch_y_end] += \
+        torch.empty((batch_size, 1, patch_x_end - patch_x_start, patch_y_end - patch_y_start)).uniform_(-epsilon, epsilon)
+
+    # Make sure the value is still within the legal range
+    perturbed_samples = torch.clamp(perturbed_samples, 0, 1)
+    return perturbed_samples
+
 def calc_input_coverage_initial_input_under(A_b_dict):
     torch.manual_seed(arguments.Config["general"]["seed"])
     dataset_tp = arguments.Config["data"]["dataset"]    
@@ -1422,9 +1543,16 @@ def calc_input_coverage_initial_input_under(A_b_dict):
     
     X, labels, data_max, data_min, perturb_epsilon = load_input_bounds(dataset_tp, label, quant=False, trans=False)
     dm_vol = calc_total_sub_vol(data_min, data_max)
-    # dm_vol = np.prod(data_max.cpu().detach().numpy() - data_min.cpu().detach().numpy())
+
+    # Generate samples and perturb the Patch
     samples = Uniform(data_min, data_max).sample([sample_num])
     samples = torch.squeeze(samples, 1)
+
+    if arguments.Config["preimage"]["patch"]:
+        samples = add_patch_attack(samples)
+
+    # dm_vol = np.prod(data_max.cpu().detach().numpy() - data_min.cpu().detach().numpy())
+
     # torch.save(samples, sample_path)
     # else:
     #     samples = torch.load(sample_path)
@@ -1460,8 +1588,10 @@ def calc_input_coverage_initial_input_under(A_b_dict):
         mat = A_b_dict["lA"]
         bias = A_b_dict["lbias"]
         # print('mat shape: {}, sample_tmp_T shape: {}'.format(mat.shape, samples_tmp.T.shape))    
-        if dataset_tp != 'cartpole':
-            mat = np.squeeze(mat, axis=1)            
+        if dataset_tp != 'cartpole' and mat.shape[1] == 1:
+            mat = np.squeeze(mat, axis=1)
+        if dataset_tp == 'MNIST_ERAN':
+            samples_tmp = samples_tmp.reshape(samples_tmp.shape[0], -1)  # shape -> (13, 784)
         result = np.matmul(mat, samples_tmp.T)+bias
         spec_dim = result.shape[0]
         if spec_dim > 1:

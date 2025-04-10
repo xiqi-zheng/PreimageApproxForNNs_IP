@@ -1,3 +1,5 @@
+import os
+
 import torch
 import torch.nn as nn
 import numpy as np
@@ -238,22 +240,44 @@ def load_input_bounds(dataset, truth_label, quant, trans):
             # data_max = torch.tensor([[0.5, 0.5, 0.5, 0.5]]).reshape(1, -1)
             # data_min = torch.tensor([[-0.5, -0.5, -0.5, -0.5]]).reshape(1, -1)
         eps = None
-    elif dataset == 'CIFAR':
-        # Example: loading CIFAR-10 data using torchvision
-        transform = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(),
-            # You can add other transformations if needed
-        ])
-        cifar_dataset = torchvision.datasets.CIFAR10(root='./data', train=False, download=True, transform=transform)
+    elif dataset == "MNIST":
+        # 1. Loading MNIST preprocessed data
+        database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets/MNIST')
 
-        # Selecting a sample image from CIFAR-10 dataset
-        sample_image, label = cifar_dataset[0]
-        X = sample_image.unsqueeze(0)  # Add a batch dimension
-        labels = torch.tensor([truth_label]).long()  # Use the provided truth_label
-        # Define data_max and data_min with shapes of [1, 3, 32, 32]
-        data_max = torch.ones(1, 3, 32, 32)  # The maximum value of all pixels is 1
-        data_min = torch.zeros(1, 3, 32, 32)  # The minimum value of all pixels is 0
+        X_all = np.load(os.path.join(database_path, "X_data.npy"))
+        labels = np.load(os.path.join(database_path, "Y_data.npy"))
+        X_all = torch.from_numpy(X_all.astype(np.float32))
+        labels_all = torch.from_numpy(labels.astype(int))
+
+        # 2. Select sample 0
+        X = X_all[0].unsqueeze(0)  # shape -> (1, 1, 28, 28)
+        labels = labels_all[0].unsqueeze(0)  # shape -> (1,)
+
+        # 3. Set input boundaries, make sure BaB can only be divided between [0,1]
+        # shape -> (1, 784), so that calc_total_sub_vol() can calculate the volume correctly
+        data_max = torch.ones_like(X)
+        data_min = torch.zeros_like(X)
         eps = None
+        print(f"Testing MNIST sample 0: X shape={X.shape}, Label={labels.item()}")
+    elif dataset == "MNIST_ERAN":
+        database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets/eran/mnist_eran')
+        X_all = np.load(os.path.join(database_path, "X_eran.npy"))
+        labels = np.load(os.path.join(database_path, "Y_eran.npy"))
+        mean = 0.1307
+        std = 0.3081
+        X_all = (X_all - mean) / std
+        X_all = torch.from_numpy(X_all.astype(np.float32))
+        labels_all = torch.from_numpy(labels.astype(int))
+
+        # 2. Select sample 0
+        X = X_all[0].unsqueeze(0)  # shape -> (1, 1, 28, 28)
+        labels = labels_all[0].unsqueeze(0)  # shape -> (1,)
+        # 3. Set input boundaries, make sure BaB can only be divided between [0,1]
+        # shape -> (1, 784), so that calc_total_sub_vol() can calculate the volume correctly
+        data_max = torch.ones_like(X)
+        data_min = torch.zeros_like(X)
+        eps = None
+        print(f"Testing MNIST_ERAN sample 0: X shape={X.shape}, Label={labels.item()}")
 
     return X, labels, data_max, data_min, eps
 

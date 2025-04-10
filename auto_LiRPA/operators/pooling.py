@@ -42,17 +42,56 @@ class BoundMaxPool(BoundOptimizableActivation):
 
     def init_opt_parameters(self, start_nodes):
         self.alpha = OrderedDict()
+        print("start_nodes: ", start_nodes)
         ref = self.inputs[0].lower # a reference variable for getting the shape
         for ns, size_s, unstable_idx in start_nodes:
+            # print(f"ns: {ns}")
+            # print(f"size_s: {size_s}, type: {type(size_s)}")
+            # print(f"self.input_shape: {self.input_shape}, type: {type(self.input_shape)}")
+            # print(f"self.output_shape: {self.output_shape}, type: {type(self.output_shape)}")
+            # print(f"self.kernel_size: {self.kernel_size}, type: {type(self.kernel_size)}")
+            # print(f"ref.device: {ref.device}")
+            #
+            # print(f"self.input_shape[0]: {self.input_shape[0]}")
+            # print(f"self.input_shape[1]: {self.input_shape[1]}")
+            # print(f"self.output_shape[-2]: {self.output_shape[-2]}")
+            # print(f"self.output_shape[-1]: {self.output_shape[-1]}")
+            # print(f"self.kernel_size[0]: {self.kernel_size[0]}")
+            # print(f"self.kernel_size[1]: {self.kernel_size[1]}")
+
             if ns == '_forward':
                 warnings.warn("MaxPool's optimization is not supported for forward mode")
                 continue
-            self.alpha[ns] = torch.empty(
-                [1, size_s, self.input_shape[0], self.input_shape[1], 
-                self.output_shape[-2], self.output_shape[-1], 
-                self.kernel_size[0], self.kernel_size[1]], 
-                dtype=torch.float, device=ref.device, requires_grad=True)
+
+            if isinstance(size_s, torch.Size):
+                size_s = tuple(size_s)  # torch.Size -> tuple
+            elif isinstance(size_s, int):
+                size_s = (size_s,)  # int -> tuple of one element
+
+            try:
+                self.alpha[ns] = torch.empty(
+                    [1] + list(size_s) + [
+                        int(self.input_shape[0]), int(self.input_shape[1]),
+                        int(self.output_shape[-2]), int(self.output_shape[-1]),
+                        int(self.kernel_size[0]), int(self.kernel_size[1])
+                    ],
+                    dtype=torch.float, device=ref.device, requires_grad=True
+                )
+            except Exception as e:
+                print(f"Error in init_opt_parameters for layer {ns}: {e}")
+                print(f"size_s: {size_s}, type: {type(size_s)}")
+                print(f"self.input_shape: {self.input_shape}, type: {type(self.input_shape)}")
+                print(f"self.output_shape: {self.output_shape}, type: {type(self.output_shape)}")
+                print(f"self.kernel_size: {self.kernel_size}, type: {type(self.kernel_size)}")
+                raise
+
+            # self.alpha[ns] = torch.empty(
+            #     [1, size_s, self.input_shape[0], self.input_shape[1],
+            #     self.output_shape[-2], self.output_shape[-1],
+            #     self.kernel_size[0], self.kernel_size[1]],
+            #     dtype=torch.float, device=ref.device, requires_grad=True)
             self.init[ns] = False
+
 
     @staticmethod
     @torch.jit.script

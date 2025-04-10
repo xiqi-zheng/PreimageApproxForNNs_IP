@@ -1,11 +1,10 @@
 preimage:
   patch: False
-  sample_dir: "/home/xiyue/LinInv/sample_seed_data/mnist_6_100/"
 general:
   complete_verifier: bab
 model:
   name: mnist_6_100
-  path: models/eran/mnist_6_100_nat.pth
+  path: D:\IP\Github\PreimageApproxForNNs\src\models\eran\mnist_6_100_nat.pth
 data:
   dataset: MNIST_ERAN_UN
   start: 0

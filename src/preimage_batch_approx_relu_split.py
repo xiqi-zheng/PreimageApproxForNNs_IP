@@ -97,6 +97,8 @@ def load_act_vecs(dataset_tp):
             pre_relu_layer = ['1', '3']
         elif arguments.Config["model"]["name"] == "mnist_6_100":
             pre_relu_layer = ['2', '4', '6', '8', '10']
+        elif arguments.Config["model"]["name"] == "mnist_conv_small":
+            pre_relu_layer = ['1', '3', '6']
     elif dataset_tp == "auto_park":
         pre_relu_layer = ['2']
     elif dataset_tp == "auto_park_part":
@@ -192,10 +194,19 @@ def batch_verification(tot_ambi_nodes_sample, mask_sample_ori, score_relus_ori, 
         for l, layer_his in enumerate(history):
             if len(layer_his[0]) == 0:
                 continue
+            # neuron_idxs = layer_his[0]
+            # new_mask_sample[l][0][neuron_idxs] = 0
+            # new_score_relus[l][0][neuron_idxs] = float('-inf')
             neuron_idxs = layer_his[0]
-            print('check mask and score relus', new_mask_sample[l][0][neuron_idxs], new_score_relus[l][0][neuron_idxs])
-            new_mask_sample[l][0][neuron_idxs] = 0
-            new_score_relus[l][0][neuron_idxs] = -1
+            flat_mask = new_mask_sample[l][0].view(-1)
+            flat_score = new_score_relus[l][0].view(-1)
+            # print('check mask and score relus', flat_score, flat_score)
+            flat_mask[neuron_idxs] = 0
+            flat_score[neuron_idxs] = float('-inf')
+            # Assign value back to original position
+            new_mask_sample[l][0] = flat_mask.view_as(new_mask_sample[l][0])
+            new_score_relus[l][0] = flat_score.view_as(new_score_relus[l][0])
+
         return new_mask_sample, new_score_relus
     history_mask = False
     for l, layer_his in enumerate(history[0]):
@@ -354,12 +365,14 @@ def batch_verification(tot_ambi_nodes_sample, mask_sample_ori, score_relus_ori, 
             if len(neuron_idxs) == 0:
                 continue
             neuron_signs = layer_info[1]
+            # Flatten the current layer's acti_vecs
+            acti_flat = acti_vecs[i].reshape(acti_vecs[i].shape[0], -1)  # [batch, N]
             for j, neuron_id in enumerate(neuron_idxs):
                 neuron_sign = neuron_signs[j]
                 if neuron_sign == +1:
-                    temp_idx = np.where(acti_vecs[i][:, neuron_id]>=0)[0]
+                    temp_idx = np.where(acti_flat[:, neuron_id]>=0)[0]
                 elif neuron_sign == -1:
-                    temp_idx = np.where(acti_vecs[i][:, neuron_id]<0)[0]
+                    temp_idx = np.where(acti_flat[:, neuron_id]<0)[0]
                 else:
                     print("neuron sign assignment error")
                 if sample_part is None:
@@ -569,6 +582,7 @@ def calc_pixel_pos(attack_tp):
         xs, ys = arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"]
         xe = xs + arguments.Config["preimage"]["patch_len"]
         ye = ys + arguments.Config["preimage"]["patch_width"]
+        # Todo: need to change (i * 28 + j) to more general code instead of using hard coding
         for i in range(xs, xe):
             for j in range(ys, ye):
                 pixel_pos.append(i * 28 + j)  
@@ -599,7 +613,9 @@ def get_act_vecs(prop_samples, model, dataset_tp):
         elif arguments.Config["model"]["name"] == "mnist_6_100":
             pre_relu_layer = ['2', '4', '6', '8', '10']
         elif arguments.Config["model"]["name"] == "simple_conv_mnist":
-            pre_relu_layer = ['1', '3', '5']  # conv1, conv2, fc1
+            pre_relu_layer = ['1', '3', '4']
+        elif arguments.Config["model"]["name"] == "mnist_conv_small":
+            pre_relu_layer = ['1', '3', '6']
     elif dataset_tp == "auto_park":
         pre_relu_layer = ['2']
     elif dataset_tp == "auto_park_part":
@@ -607,6 +623,8 @@ def get_act_vecs(prop_samples, model, dataset_tp):
     elif "vcas" in dataset_tp:
         pre_relu_layer = ['1']
     node_types = [m for m in list(model.modules())]
+    # for i, module in enumerate(node_types):
+    #     print(f"Index {i}: {module}")
     activation = {}
     def get_activation(name):
         def hook(model, input, output):
@@ -618,6 +636,7 @@ def get_act_vecs(prop_samples, model, dataset_tp):
         output = model(prop_samples)
         # print(activation[layer].shape)  
     return pre_relu_layer, activation
+
 def calc_mask_concrete_samples_from_unstable_idx(x, net, y):
     sample_num = arguments.Config['preimage']["sample_num"]
     atk_tp = arguments.Config["preimage"]["atk_tp"]
@@ -714,7 +733,6 @@ def calc_mask_concrete_samples_from_unstable_idx(x, net, y):
     return mask_sample, score_all, unstable_indices 
 
 def calc_mask_concrete_samples(x, net, y):
-    print("shape of x: ",x.shape)
     sample_num = arguments.Config['preimage']["sample_num"]
     atk_tp = arguments.Config["preimage"]["atk_tp"]
     multi_spec = arguments.Config["preimage"]["multi_spec"]
@@ -725,28 +743,47 @@ def calc_mask_concrete_samples(x, net, y):
     x_L = x_L.reshape(x_L.shape[0], -1)
     x_U = x_U.reshape(x_U.shape[0], -1)
     torch.manual_seed(arguments.Config["general"]["seed"])
-    # torch.manual_seed(arguments.Config["general"]["seed"]) 
+    # torch.manual_seed(arguments.Config["general"]["seed"])
     if multi_spec:
         prop_samples = Uniform(x_L, x_U).sample([sample_num])
     else:
         if atk_tp == 'l_inf':
             prop_samples = Uniform(x_L, x_U).sample([sample_num])
-            prop_samples = torch.squeeze(prop_samples).reshape(img_shape)
+            if arguments.Config["model"]["name"] == "mnist_conv_small":
+                prop_samples = prop_samples.reshape(sample_num, -1)  # 保证是 [sample_num, input_dim]
+                prop_samples = prop_samples.reshape(img_shape)
+            else:
+                prop_samples = torch.squeeze(prop_samples).reshape(img_shape)
+
+
         else:
-            prop_samples = img.repeat(sample_num,1)
+            prop_samples = img.repeat(sample_num, 1)
             print("shape of prop_samples: ", prop_samples.shape)
             pixel_pos = calc_pixel_pos(atk_tp)
             pixel_pos = torch.tensor(pixel_pos).to(arguments.Config["general"]["device"])
-            print("shape of pixel_pos: ", pixel_pos.shape)
             pixel_lower = x_L[0][pixel_pos]
             pixel_upper = x_U[0][pixel_pos]
-            print("shape of pixel_loawer: ",pixel_lower.shape)
-            print("shape of pixel_upper: ", pixel_upper.shape)
             pixel_vals = Uniform(pixel_lower, pixel_upper).sample([sample_num])
-            print("shape of pixel_vals: ", pixel_vals.shape)
             prop_samples[:, pixel_pos] = pixel_vals
             prop_samples = prop_samples.reshape(img_shape)
-    torch.save(prop_samples, os.path.join(arguments.Config['preimage']["sample_dir"], 'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"],atk_tp)))
+    if arguments.Config["preimage"]["patch"]:
+        torch.save(prop_samples, os.path.join(arguments.Config['preimage']["sample_dir"],
+                                              'sample_{}_{}_size_{}_{}.pt'.format(arguments.Config["data"]["dataset"],
+                                                                                        atk_tp,
+                                                                                        arguments.Config["preimage"]["patch_len"],
+                                                                                        arguments.Config["preimage"]["patch_width"],
+                                                                                        )))
+        torch.save(prop_samples, os.path.join(arguments.Config['preimage']["sample_dir"],
+                                              'base_sample_{}_{}_size_{}_{}.pt'.format(arguments.Config["data"]["dataset"],
+                                                                                  atk_tp,
+                                                                                  arguments.Config["preimage"][
+                                                                                      "patch_len"],
+                                                                                  arguments.Config["preimage"][
+                                                                                      "patch_width"],
+                                                                                  )))
+    else:
+        torch.save(prop_samples, os.path.join(arguments.Config['preimage']["sample_dir"],
+                                              'sample_{}_{}.pt'.format(arguments.Config["data"]["dataset"], atk_tp)))
     model = net.model_ori
     model.eval()
     # print(model.state_dict())
@@ -775,13 +812,15 @@ def calc_mask_concrete_samples(x, net, y):
     unstable_indices = []
     for i, layer in enumerate(pre_relu_layer):
         act_vec = activation[layer]
+        print(f"Layer {layer}, act_vec shape: {act_vec.shape}")
         samples_lb = torch.min(act_vec, dim=0).values
         samples_ub = torch.max(act_vec, dim=0).values
         # 1 is unstable neuron, 0 is stable neuron.
         mask_tmp = torch.logical_and(samples_lb<0, samples_ub>0).float()
         mask_sample.append(torch.unsqueeze(mask_tmp,0))
         score_tmp = []
-        unstable_idx = torch.squeeze(mask_tmp.nonzero(),1)
+        unstable_idx = torch.squeeze(mask_tmp.nonzero(), 1)
+        # print(f"Unstable indices: {unstable_idx}")
         unstable_indices.append(unstable_idx)
         if unstable_idx.shape[0]:
             pos_sample_mask = act_vec[:, unstable_idx] >= 0
@@ -795,17 +834,29 @@ def calc_mask_concrete_samples(x, net, y):
                 score_tmp.append(sample_num-abs(pos_freq-neg_freq))
             score_all.append(score_tmp)                 
         else:
-            score_all.append(score_tmp)                       
-    return mask_sample, score_all, unstable_indices  
+            score_all.append(score_tmp)
+    return mask_sample, score_all, unstable_indices
+
 def restore_scores(score_all, unstable_indices, mask_sample):
     score_restore = []
     for i, unstable_idx in enumerate(unstable_indices):
         act_vec_shape = mask_sample[i].shape
         score_tmp = -torch.ones(act_vec_shape)
-        score_tmp[:, unstable_idx] = torch.tensor(score_all[i],dtype=torch.float)
+        # print(f"unstable_idx min: {unstable_idx.min()}, max: {unstable_idx.max()}")
+        # print(f"score_tmp shape: {score_tmp.shape}
+        # Todo: Need to be modified to be applicable to all CNN models
+        if arguments.Config["model"]["name"] == 'simple_conv_mnist' or arguments.Config["model"]["name"] == "mnist_conv_small":
+            if len(act_vec_shape) == 4:
+                score_tmp[:, unstable_idx[:, 0], unstable_idx[:, 1], unstable_idx[:, 2]] = torch.tensor(score_all[i], dtype=torch.float)
+            elif len(act_vec_shape) == 2:
+                score_tmp[:, unstable_idx] = torch.tensor(score_all[i], dtype=torch.float)
+        else:
+            score_tmp[:, unstable_idx] = torch.tensor(score_all[i], dtype=torch.float)
         # score_tmp = torch.unsqueeze(score_tmp, 0)
         score_restore.append(score_tmp)
-    return score_restore 
+    return score_restore
+
+
 def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_lower_bounds=None,
                       refined_upper_bounds=None, activation_opt_params=None,
                       reference_slopes=None, reference_lA=None, attack_images=None,
@@ -860,13 +911,13 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
     Flag_covered = False
 
     y_label = y[0][0]
-    # print('check data label', y_label)
+    print('check data label', y_label)
     if arguments.Config["model"]["onnx_path"] is None:
-        model_tp = arguments.Config["model"]["name"]    
-        if model_tp == 'mnist_6_100':
-            mask_sample_ori, score_all, unstable_indices = calc_mask_concrete_samples_from_unstable_idx(x, net, y_label)
-        else:                   
-            mask_sample_ori, score_all, unstable_indices = calc_mask_concrete_samples(x, net, y_label)
+        # model_tp = arguments.Config["model"]["name"]
+        # if model_tp == 'mnist_6_100':
+        #     mask_sample_ori, score_all, unstable_indices = calc_mask_concrete_samples_from_unstable_idx(x, net, y_label)
+        # else:
+        mask_sample_ori, score_all, unstable_indices = calc_mask_concrete_samples(x, net, y_label)
     else:
         dataset_tp = arguments.Config["data"]["dataset"]
         if "MNIST" in dataset_tp:
@@ -904,6 +955,7 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
             domain, x, None, None, stop_criterion_func=stop_criterion(decision_thresh), reference_slopes=None,
             cutter=net.cutter)
     elif refined_lower_bounds is None or refined_upper_bounds is None:
+        assert arguments.Config["general"]["enable_incomplete_verification"] is False
         assert arguments.Config["general"]["enable_incomplete_verification"] is False
         global_ub, global_lb, _, _, primals, updated_mask, lA, A, lower_bounds, upper_bounds, pre_relu_indices, slope, history, attack_image = net.build_the_model(
             domain, x, stop_criterion_func=stop_criterion(decision_thresh),opt_input_poly=False,opt_relu_poly=True)
@@ -958,7 +1010,8 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
             Visited,
             time.time() - start,
             [cov_quota],
-            1
+            1,
+            0
         )
     if target_vol == 0:
         return (
@@ -967,7 +1020,8 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
             Visited,
             time.time() - start,
             [1],
-            1
+            1,
+            0
         )
     # if arguments.Config["preimage"]["save_process"]:
     #     save_path = os.path.join(arguments.Config["preimage"]["result_dir"], 'run_example')
@@ -1112,7 +1166,7 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
                 preimage_dict_all = get_preimage_info(domains)
                 subdomain_num = len(domains)
                 del domains            
-                return False, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num
+                return False, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num, num_iter
             if use_bab_attack:
                 max_dive_fix_ratio = arguments.Config["bab"]["attack"]["max_dive_fix_ratio"]
                 min_local_free_ratio = arguments.Config["bab"]["attack"]["min_local_free_ratio"]
@@ -1166,7 +1220,7 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
                 preimage_dict_all = get_preimage_info(domains)
                 subdomain_num = len(domains)
                 del domains
-                return True, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num
+                return True, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num, num_iter
         # if isinstance(global_lb, torch.Tensor):
         #     global_lb = global_lb.max().item()
         # if isinstance(global_ub, torch.Tensor):
@@ -1180,7 +1234,7 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
                 preimage_dict_all = get_preimage_info(domains)
                 subdomain_num = len(domains)
                 del domains            
-                return False, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num
+                return False, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num, num_iter
             if use_bab_attack:
                 max_dive_fix_ratio = arguments.Config["bab"]["attack"]["max_dive_fix_ratio"]
                 min_local_free_ratio = arguments.Config["bab"]["attack"]["min_local_free_ratio"]
@@ -1242,7 +1296,7 @@ def relu_bab_parallel(net, domain, x,y, use_neuron_set_strategy=False, refined_l
     preimage_dict_all = get_preimage_info(domains)
     subdomain_num = len(domains)
     del domains
-    return True, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num
+    return True, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num, num_iter
 
 def get_preimage_info(domains):
     preimage_dict_all = []

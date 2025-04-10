@@ -4,12 +4,10 @@ preimage:
   over_approx: False
   under_approx: True
   threshold: 0.75
-  label: 0
   instability: False
-  patch: False
 model:
   name: simple_conv_mnist
-  path: "model_dir/simple_cnn_mnist.pth"
+  path: D:\IP\Github\PreimageApproxForNNs\model_dir\simple_cnn_mnist.pth
 specification:
   type: 'lp'
   epsilon: 0.03
@@ -25,4 +23,4 @@ bab:
   branching:
     method: "preimg"
     input_split:
-      enable: false
+      enable: False

@@ -5,7 +5,7 @@
 ##                                                                     ##
 #########################################################################
 """Branch and bound for input space split."""
-
+import csv
 import time
 import numpy as np
 import torch
@@ -14,21 +14,24 @@ import math
 import os
 import pickle
 import random
-# import logging
 
-# import preimage_arguments
+from torch.distributions import Uniform
+
 import arguments
 from auto_LiRPA.utils import stop_criterion_batch
+from src.preimage_batch_approx_relu_split import calc_mask_concrete_samples
 # from branching_domains_input_split import (
 #     UnsortedInputDomainList,
 #     SortedInputDomainList,
 # )
 from test_branching_subdomain_queue import SortedInputDomainList, UnsortedInputDomainList
 # change to test_branching
-from test_branching_heuristics import input_split_all_feature_parallel, input_split_feature_edge, input_split_branching, get_split_depth
+from test_branching_heuristics import input_split_all_feature_parallel, input_split_feature_edge, input_split_branching, \
+    get_split_depth, patch_attack_input_split
 from attack_pgd import pgd_attack_with_general_specs, test_conditions, gen_adv_example
 
-from test_polyhedron_util import post_process_A, calc_input_coverage_initial_input_under, calc_input_coverage_initial_input_over
+from test_polyhedron_util import post_process_A, calc_input_coverage_initial_input_under, \
+    calc_input_coverage_initial_input_over, calc_input_coverage_initial_image_under, calc_patch_coverage_for_input_split
 from test_polyhedron_util import post_process_greedy_A, calc_Hrep_coverage_multi_spec_pairwise_under, calc_Hrep_coverage_multi_spec_pairwise_over
 from test_polyhedron_util import calc_mc_esti_coverage_initial_input_under, calc_mc_coverage_multi_spec_pairwise_under
 Visited, Solve_slope, storage_depth = 0, False, 0
@@ -196,7 +199,10 @@ def batch_verification_input_split(
     branching_method="sb",
     stop_func=stop_criterion_batch,
     bound_lower=False,
-    bound_upper=False
+    bound_upper=False,
+    x = None,
+    history = None,
+    y = None
 ):
     split_start_time = time.time()
     global Visited
@@ -209,15 +215,30 @@ def batch_verification_input_split(
 
     # STEP 2: find the neuron to split and create new split domains.
     decision_start_time = time.time()
-    slopes, dm_l_all, dm_u_all, cs, thresholds, _ = ret
+    if arguments.Config["preimage"]["patch"]:
+        slopes, dm_l_all, dm_u_all, cs, thresholds, split_idx = ret
+        print("domain_id: ", split_idx)
+    else:
+        slopes, dm_l_all, dm_u_all, cs, thresholds, _ = ret
 
-    # split_depth = get_split_depth(dm_l_all)
-    # if arguments.Config["data"]["dataset"] == "vcas":
-    #     split_idx = torch.tensor([0,1,2,3])
-    # else:
-    split_idx = torch.arange(dm_l_all.shape[1])        
-    new_dm_l_all, new_dm_u_all, cs, thresholds, split_depth = input_split_all_feature_parallel(
-        dm_l_all, dm_u_all, shape, cs, thresholds, split_depth=1, i_idx=split_idx)
+        # split_depth = get_split_depth(dm_l_all)
+        # if arguments.Config["data"]["dataset"] == "vcas":
+        #     split_idx = torch.tensor([0,1,2,3])
+        # else:
+        split_idx = torch.arange(dm_l_all.shape[1])
+
+    if arguments.Config["preimage"]["patch"]:
+        xs, ys = arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"]
+        xe = xs + arguments.Config["preimage"]["patch_len"]
+        ye = ys + arguments.Config["preimage"]["patch_width"]
+        new_dm_l_all, new_dm_u_all, cs, thresholds, left_id, right_id = patch_attack_input_split(x, dm_l_all, dm_u_all, xs, ys, xe, ye, split_idx.item(), shape, cs, thresholds)
+
+    else:
+        new_dm_l_all, new_dm_u_all, cs, thresholds, split_depth = input_split_all_feature_parallel(
+            dm_l_all, dm_u_all, shape, cs, thresholds, split_depth=1, i_idx=split_idx)
+
+
+
 
 
     # slopes = slopes * (2 ** (split_depth - 1))
@@ -250,61 +271,87 @@ def batch_verification_input_split(
     if bound_lower:
         if arguments.Config['preimage']["quant"]:
             cov_input_idx_all = calc_mc_coverage_multi_spec_pairwise_under(A_b_dict_input_idx_all, new_dm_l_all, new_dm_u_all, batch_spec)
+        elif arguments.Config["preimage"]["patch"]:
+            cov_input_idx_all = calc_patch_coverage_for_input_split(y, A_b_dict_input_idx_all)
         else:
-            cov_input_idx_all = calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict_input_idx_all, new_dm_l_all, new_dm_u_all, batch_spec)
+            cov_input_idx_all = calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict_input_idx_all, new_dm_l_all, new_dm_u_all, batch_spec, x)
         # select one bisection to keep which leads to best coverage
         # remeber that the algorithm takes every possible bisection on input feats
-        select_idx = None
-        max_under_reward = None
-        max_under_cov = None
-        under_cov_all = []
-        cov_reward_feat_all = []
-        if arguments.Config["preimage"]["smooth_val"]:
-            for i, cov_info in enumerate(cov_input_idx_all):
-                if select_idx is None:
-                    select_idx = i
-                    # min_over_cov = cov_info[2][1]
-                    max_under_reward = cov_info[2][2]
-                else:
-                    # if cov_info[2][0]*cov_info[2][1] > max_cov_vol:
-                    if cov_info[2][2] > max_under_reward:
-                        select_idx = i
-                        # max_cov_vol = cov_info[2][0]*cov_info[2][1]
-                        max_under_reward = cov_info[2][2]
-                cov_reward_feat_all.append(cov_info[2][2])
-            cov_reward_feat_all = np.array(cov_reward_feat_all)
-            if (np.max(cov_reward_feat_all) - np.min(cov_reward_feat_all)) < 0.1:
-                print("use the longest length")
-                select_idx = torch.topk(dm_u_all[0] - dm_l_all[0], k=1, dim=-1).indices
-                select_idx = select_idx[0]
+        if arguments.Config["preimage"]["patch"]:
+            # === patch mode: simplified logic, only one pixel was split ===
+            assert len(cov_input_idx_all) == 1, "Patch mode expects only one split candidate"
+            cov_info = cov_input_idx_all[0]  # cov_info = [(vol_L, cov_L), (vol_R, cov_R)]
+
+            cov_quota_list = [cov_info[0][1], cov_info[1][1]]  # coverage ratio
+            target_vol_list = [cov_info[0][0], cov_info[1][0]]  # target volume
+
+            # === Directly use select_idx = 0 (only one split pixel) ===
+            select_idx = 0
+
+            # extract symbolic bound
+            lA_list = [
+                A_b_dict_input_idx_all['lA'][0 * batch_spec: 1 * batch_spec],
+                A_b_dict_input_idx_all['lA'][1 * batch_spec: 2 * batch_spec]
+            ]
+            lbias_list = [
+                A_b_dict_input_idx_all['lbias'][0 * batch_spec: 1 * batch_spec],
+                A_b_dict_input_idx_all['lbias'][1 * batch_spec: 2 * batch_spec]
+            ]
+
+
         else:
-            for i, cov_info in enumerate(cov_input_idx_all):
-                if select_idx is None:
-                    select_idx = i
-                    max_under_cov = cov_info[2][1]
-                else:
-                    if cov_info[2][1] > max_under_cov:
-                    # if cov_info[2][2] > max_under_reward:
+            select_idx = None
+            max_under_reward = None
+            max_under_cov = None
+            under_cov_all = []
+            cov_reward_feat_all = []
+            if arguments.Config["preimage"]["smooth_val"]:
+                for i, cov_info in enumerate(cov_input_idx_all):
+                    if select_idx is None:
+                        select_idx = i
+                        # min_over_cov = cov_info[2][1]
+                        max_under_reward = cov_info[2][2]
+                    else:
+                        # if cov_info[2][0]*cov_info[2][1] > max_cov_vol:
+                        if cov_info[2][2] > max_under_reward:
+                            select_idx = i
+                            # max_cov_vol = cov_info[2][0]*cov_info[2][1]
+                            max_under_reward = cov_info[2][2]
+                    cov_reward_feat_all.append(cov_info[2][2])
+                cov_reward_feat_all = np.array(cov_reward_feat_all)
+                if (np.max(cov_reward_feat_all) - np.min(cov_reward_feat_all)) < 0.1:
+                    print("use the longest length")
+
+                    select_idx = torch.topk(dm_u_all[0] - dm_l_all[0], k=1, dim=-1).indices
+                    select_idx = select_idx[0]
+            else:
+                for i, cov_info in enumerate(cov_input_idx_all):
+                    if select_idx is None:
                         select_idx = i
                         max_under_cov = cov_info[2][1]
-                        # max_under_reward = cov_info[2][2]
-                under_cov_all.append(cov_info[2][1])
-            under_cov_all = np.array(under_cov_all)
-            if (np.max(under_cov_all) - np.min(under_cov_all)) < 0.01:
-                select_idx = random.randint(0, len(cov_input_idx_all)-1)
-            #     print("use the longest length")
-            #     select_idx = torch.topk(dm_u_all[0] - dm_l_all[0], k=1, dim=-1).indices
-            #     select_idx = select_idx[0]
-        print('selected feature', select_idx)
-        # Update the attributes of subdomains that need to be added
-        lA_list, lbias_list = [], []
-        for j in range(2): # 2*i*spec_dim+j*spec_dim : 2*i*spec_dim+(j+1)*spec_dim
-            lA_list.append(A_b_dict_input_idx_all['lA'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec])
-            lbias_list.append(A_b_dict_input_idx_all['lbias'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec])
-        # print('check lA lbias', lA_list, lbias_list)
-        uA_list = None
-        ubias_list = None
-        dom_lb = dom_lb[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
+                    else:
+                        if cov_info[2][1] > max_under_cov:
+                        # if cov_info[2][2] > max_under_reward:
+                            select_idx = i
+                            max_under_cov = cov_info[2][1]
+                            # max_under_reward = cov_info[2][2]
+                    under_cov_all.append(cov_info[2][1])
+                under_cov_all = np.array(under_cov_all)
+                if (np.max(under_cov_all) - np.min(under_cov_all)) < 0.01:
+                    select_idx = random.randint(0, len(cov_input_idx_all)-1)
+                #     print("use the longest length")
+                #     select_idx = torch.topk(dm_u_all[0] - dm_l_all[0], k=1, dim=-1).indices
+                #     select_idx = select_idx[0]
+            print('selected feature', select_idx)
+            # Update the attributes of subdomains that need to be added
+            lA_list, lbias_list = [], []
+            for j in range(2): # 2*i*spec_dim+j*spec_dim : 2*i*spec_dim+(j+1)*spec_dim
+                lA_list.append(A_b_dict_input_idx_all['lA'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec])
+                lbias_list.append(A_b_dict_input_idx_all['lbias'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec])
+            # print('check lA lbias', lA_list, lbias_list)
+            uA_list = None
+            ubias_list = None
+            dom_lb = dom_lb[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
     elif bound_upper:
         cov_input_idx_all = calc_Hrep_coverage_multi_spec_pairwise_over(A_b_dict_input_idx_all, new_dm_l_all, new_dm_u_all, batch_spec)
         select_idx = None
@@ -364,41 +411,79 @@ def batch_verification_input_split(
             uA_list.append(A_b_dict_input_idx_all['uA'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec])
             ubias_list.append(A_b_dict_input_idx_all['ubias'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec]) 
         dom_ub = dom_ub[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
-    # xy: cov_quota_list records the added domains, actually in the end you can always obtain the cov_quota, dm_l, dm_b into the class and obtain them later
-    cov_quota_list = [cov_info[1] for cov_info in cov_input_idx_all[select_idx][:2]]
-    target_vol_list = [cov_info[0] for cov_info in cov_input_idx_all[select_idx][:2]]
-    
-    new_dm_l_all = new_dm_l_all[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
-    new_dm_u_all = new_dm_u_all[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
-    cs = cs[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
-    thresholds = thresholds[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
-    # split_idx = split_idx[2*select_idx, 2*(select_idx+1)]
-    if slopes is not None and type(slopes) != list:
-        slope_dict = {}
-        for key0 in slopes.keys():
-            slope_dict[key0] = {}
-            for key1 in slopes[key0].keys():
-                slope_dict[key0][key1] = slopes[key0][key1][:, :, 2*select_idx*batch_spec : 2*(select_idx + 1)*batch_spec]
+    if arguments.Config["preimage"]["patch"]:
+        # extract domain attributes
+        new_dm_l_all = new_dm_l_all[0 * batch_spec: 2 * batch_spec]
+        new_dm_u_all = new_dm_u_all[0 * batch_spec: 2 * batch_spec]
+        cs = cs[0 * batch_spec: 2 * batch_spec]
+        thresholds = thresholds[0 * batch_spec: 2 * batch_spec]
+        dom_lb = dom_lb[0 * batch_spec: 2 * batch_spec]
+
+        # slope
+        if slopes is not None and type(slopes) != list:
+            slope_dict = {}
+            for key0 in slopes.keys():
+                slope_dict[key0] = {}
+                for key1 in slopes[key0].keys():
+                    slope_dict[key0][key1] = slopes[key0][key1][:, :, 0 * batch_spec: 2 * batch_spec]
+        else:
+            slope_dict = None
+
+        # add domains
+        adddomain_start_time = time.time()
+        d.add_multi(
+            cov_quota_list,
+            target_vol_list,
+            new_dm_l_all.detach(),
+            new_dm_u_all.detach(),
+            slope_dict,
+            cs,
+            thresholds,
+            lA_list=lA_list,
+            lbias_list=lbias_list,
+            lb=dom_lb,
+            uA_list=None,
+            ubias_list=None,
+            ub=dom_ub,
+            split_idx = torch.tensor([left_id, right_id])
+        )
+        adddomain_time = time.time() - adddomain_start_time
     else:
-        slope_dict = None
-    # STEP 4: Add new domains back to domain list.
-    adddomain_start_time = time.time()
-    d.add_multi(
-        cov_quota_list,
-        target_vol_list,
-        new_dm_l_all.detach(),
-        new_dm_u_all.detach(),
-        slope_dict,
-        cs,
-        thresholds,
-        lA_list=lA_list,
-        lbias_list=lbias_list,
-        lb=dom_lb,
-        uA_list=uA_list, 
-        ubias_list=ubias_list,
-        ub=dom_ub
-    )
-    adddomain_time = time.time() - adddomain_start_time
+        # xy: cov_quota_list records the added domains, actually in the end you can always obtain the cov_quota, dm_l, dm_b into the class and obtain them later
+        cov_quota_list = [cov_info[1] for cov_info in cov_input_idx_all[select_idx][:2]]
+        target_vol_list = [cov_info[0] for cov_info in cov_input_idx_all[select_idx][:2]]
+
+        new_dm_l_all = new_dm_l_all[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
+        new_dm_u_all = new_dm_u_all[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
+        cs = cs[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
+        thresholds = thresholds[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
+        # split_idx = split_idx[2*select_idx, 2*(select_idx+1)]
+        if slopes is not None and type(slopes) != list:
+            slope_dict = {}
+            for key0 in slopes.keys():
+                slope_dict[key0] = {}
+                for key1 in slopes[key0].keys():
+                    slope_dict[key0][key1] = slopes[key0][key1][:, :, 2*select_idx*batch_spec : 2*(select_idx + 1)*batch_spec]
+        else:
+            slope_dict = None
+        # STEP 4: Add new domains back to domain list.
+        adddomain_start_time = time.time()
+        d.add_multi(
+            cov_quota_list,
+            target_vol_list,
+            new_dm_l_all.detach(),
+            new_dm_u_all.detach(),
+            slope_dict,
+            cs,
+            thresholds,
+            lA_list=lA_list,
+            lbias_list=lbias_list,
+            lb=dom_lb,
+            uA_list=uA_list,
+            ubias_list=ubias_list,
+            ub=dom_ub
+        )
+        adddomain_time = time.time() - adddomain_start_time
 
     total_time = time.time() - split_start_time
     print(
@@ -452,11 +537,13 @@ def input_bab_approx_parallel_multi(
     net,
     init_domain,
     x,
+    y=None,
     model_ori=None,
     all_prop=None,
     rhs=None,
     timeout=None,
     branching_method="naive",
+    input_patch_image = False
 ):
     global storage_depth
 
@@ -488,8 +575,13 @@ def input_bab_approx_parallel_multi(
     stop_func = stop_criterion_batch
     spec_num = x.shape[0]
     Visited, Flag_first_split, global_ub = 0, True, np.inf
+
     # xy: add the flag
     Flag_covered = False
+    y_label = y[0][0]
+    if input_patch_image:
+        # generate a pkl file for image dataset
+        _,_,_ = calc_mask_concrete_samples(x, net, y_label)
 
     (
         global_ub,
@@ -523,10 +615,13 @@ def input_bab_approx_parallel_multi(
     # xy: lA used below should contain lA and lbias
     # xy: the under approx quality evaluation for the polytope based on initial domain (the whole domain)
     # xy: initial check whether satisfy the preimage underapproximation criterion
-    
 
-    
-    initial_covered, cov_quota, target_vol, preimage_dict = initial_check_preimage_approx(A, cov_thre)
+
+    if input_patch_image:
+        initial_covered, cov_quota, target_vol, preimage_dict = initial_check_preimage_approx(A, cov_thre, y_label)
+    else:
+        initial_covered, cov_quota, target_vol, preimage_dict = initial_check_preimage_approx(A, cov_thre)
+
     
     if arguments.Config["preimage"]["save_process"]:
         preimage_dict['dm_l'] = dm_l.cpu().detach().numpy() 
@@ -548,7 +643,8 @@ def input_bab_approx_parallel_multi(
             0,
             time.time() - start,
             [cov_quota],
-            1
+            1,
+            0
         )
     elif target_vol == 0:
         return (
@@ -557,7 +653,8 @@ def input_bab_approx_parallel_multi(
             0,
             time.time() - start,
             [1],
-            1
+            1,
+            0
         )    
             
     # split_depth = get_split_depth(dm_l)
@@ -580,6 +677,15 @@ def input_bab_approx_parallel_multi(
         batch_spec = len(dm_l)
         split_idx = torch.tensor([0, 1, 3])
         split_idx = split_idx.repeat(batch_spec, 1)
+    # elif arguments.Config["preimage"]["patch"]:
+    #     in_dim = dm_l.shape[-1]
+    #     batch_spec = len(dm_l)
+    #     split_idx = [0]
+    elif arguments.Config["preimage"]["patch"]:
+        in_dim = dm_l.shape[-1]
+        # print('check input dim for split index', in_dim)
+        batch_spec = len(dm_l)
+        split_idx = torch.tensor([0])
     else:
         in_dim = dm_l.shape[-1]
         # print('check input dim for split index', in_dim)
@@ -629,9 +735,21 @@ def input_bab_approx_parallel_multi(
     # glb_record = [[time.time() - start, (global_lb - rhs).max().item()]]
     cov_record = [[time.time() - start, cov_quota]]
     iter_cov_quota = [cov_quota]
-   
-   
+
+    # Initialize an empty history for tracking input splits
+    history = []
+
     num_iter = 1
+
+    log_path = "D:\IP\Github\PreimageApproxForNNs\save_dir\cov_quota_log.csv"
+
+    write_header = not os.path.exists(log_path)
+
+    with open(log_path, mode='a', newline='') as f:
+        writer = csv.writer(f)
+        if write_header:
+            writer.writerow(['iteration', 'cov_quota'])
+        writer.writerow([num_iter, cov_quota])
     # sort_domain_iter = test_arguments.Config["bab"]["branching"]["input_split"]["sort_domain_interval"]
     enhanced_bound_initialized = False
     # while len(domains) > 0:
@@ -657,7 +775,7 @@ def input_bab_approx_parallel_multi(
                     save_file = os.path.join(save_path,'{}_spec_{}_dm_{}'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["label"], subdomain_num))
                     with open(save_file, 'wb') as f:
                         pickle.dump((preimage_dict_all, dm_rec_all), f)                
-                return Flag_covered, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num
+                return Flag_covered, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num, num_iter
             # if args.smart:
             cov_quota = batch_verification_input_split(
                 domains,
@@ -670,7 +788,10 @@ def input_bab_approx_parallel_multi(
                 branching_method=branching_method,
                 stop_func=stop_func,
                 bound_lower=bound_lower,
-                bound_upper=bound_upper
+                bound_upper=bound_upper,
+                x=x,
+                history = history,
+                y = y_label
             )
             
             # else:
@@ -691,13 +812,16 @@ def input_bab_approx_parallel_multi(
             print('--- Iteration {}, Cov quota {} ---'.format(num_iter, cov_quota))
             
             iter_cov_quota.append(cov_quota)
+
+            with open(log_path, mode='a', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow([num_iter, cov_quota])
             if arguments.Config["preimage"]["save_process"]:
                 cov_dm_all, preimage_dict_all, dm_rec_all = get_preimage_info(domains, bound_lower, bound_upper)
                 save_path = os.path.join(result_dir, 'run_example')
                 save_file = os.path.join(save_path,'{}_spec_{}_iter_{}_input'.format(arguments.Config["data"]["dataset"], arguments.Config["preimage"]["label"], num_iter))
                 with open(save_file, 'wb') as f:
                     pickle.dump((preimage_dict_all, dm_rec_all), f)
-
             num_iter += 1
     elif bound_upper:    
         while cov_quota > cov_thre:
@@ -786,12 +910,11 @@ def input_bab_approx_parallel_multi(
         torch.save(iter_cov_quota, save_file)
         # with open(save_file, 'wb') as f:
         #     pickle.dump(iter_cov_quota, f)        
-    return Flag_covered, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num
+    return Flag_covered, preimage_dict_all, Visited, time_cost, iter_cov_quota, subdomain_num, num_iter
     # return Flag_covered, dm_rec_all, preimage_dict_all, Visited, cov_dm_all, time_cost, iter_cov_quota, subdomain_num
     # return global_lb.max(), None, glb_record, Visited, "safe"
-   
-   
-   
+
+
 
 
 def get_preimage_info(domains, bound_under, bound_over):
@@ -812,11 +935,9 @@ def get_preimage_info(domains, bound_under, bound_over):
             dm_rec_all.append((dom[5].cpu().detach().numpy(), dom[6].cpu().detach().numpy()))
             # print(dom[5], dom[6], dom[9], dom[0])
     return cov_dm_all, preimage_dict_all, dm_rec_all
-    
-    
 
 
-def initial_check_preimage_approx(A_dict, thre):
+def initial_check_preimage_approx(A_dict, thre, label = None):
     """check whether optimization on initial domain is successful"""
     # lbs: b, n_bounds (already multiplied with c in compute_bounds())
     preimage_dict = post_process_A(A_dict)
@@ -824,6 +945,9 @@ def initial_check_preimage_approx(A_dict, thre):
     if arguments.Config["preimage"]["under_approx"]:
         if arguments.Config['preimage']["quant"]:
             target_vol, cov_quota = calc_mc_esti_coverage_initial_input_under(preimage_dict)
+        #  TODO: need to be able to tackle the general image dataset
+        elif arguments.Config["preimage"]["patch"] and arguments.Config["data"]["dataset"] == "MNIST_ERAN":
+            target_vol, cov_quota = calc_input_coverage_initial_image_under(preimage_dict, label)
         else:
             target_vol, cov_quota = calc_input_coverage_initial_input_under(preimage_dict)
         if cov_quota >= thre:  # check whether the preimage approx satisfies the criteria

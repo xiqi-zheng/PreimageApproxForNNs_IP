@@ -1,5 +1,7 @@
 import torch
 import torch.nn as nn
+
+from src import arguments
 # from torch import Tensor
 # from collections import deque, defaultdict
 # from tqdm import tqdm
@@ -19,6 +21,7 @@ def concretize_poly_vol(lb, ub, node, root, batch_size, output_dim, bound_lower=
             # print('lb is actually lbias')
             lA, uA = root[i].lA, root[i].uA
         if not isinstance(root[i].lA, eyeC) and not isinstance(root[i].lA, Patches):
+            # ptb_num = root[i].lA.shape[1]
             lA = root[i].lA.reshape(output_dim, batch_size, -1).transpose(0, 1) if bound_lower else None
         if not isinstance(root[i].uA, eyeC) and not isinstance(root[i].uA, Patches):
             uA = root[i].uA.reshape(output_dim, batch_size, -1).transpose(0, 1) if bound_upper else None

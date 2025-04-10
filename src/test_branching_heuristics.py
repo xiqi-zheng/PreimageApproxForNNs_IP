@@ -4,6 +4,10 @@
 ##        contained in the LICENCE file in this directory.             ##
 ##                                                                     ##
 #########################################################################
+import os
+import random
+
+from torch.distributions import Uniform
 from typing_extensions import final
 from collections import defaultdict
 import math
@@ -19,6 +23,8 @@ from torch.nn import functional as F
 from model_defs import Flatten
 from auto_LiRPA.bound_ops import BoundRelu, BoundLinear, BoundConv, BoundBatchNormalization, BoundAdd
 import preimage_arguments
+from src import arguments
+from src.utils import generate_samples_for_domains, generate_samples_for_split_domains
 
 Icp_score_counter = 0
 
@@ -906,7 +912,7 @@ def input_split_feature_edge(dm_l_all, dm_u_all, shape=None,
     """
     dm_l_all = dm_l_all.flatten(1)
     dm_u_all = dm_u_all.flatten(1)
-    
+
     score = (dm_u_all - dm_l_all).unsqueeze(-2)
     score = score.amax(dim=-2)
     idx = torch.topk(score, 1, -1).indices
@@ -990,7 +996,6 @@ def input_split_all_feature_parallel(dm_l_all, dm_u_all, shape=None,
         indices = torch.arange(dm_l_all.shape[0])
         # copy_num = dm_l_all_cp.shape[0]//dm_l_all.shape[0] # 
         # idx = i_idx[:,i].long()
-        
 
         dm_l_all_tmp = dm_l_all.clone()
         dm_u_all_tmp = dm_u_all.clone()
@@ -1019,6 +1024,72 @@ def input_split_all_feature_parallel(dm_l_all, dm_u_all, shape=None,
         thresholds = thresholds.squeeze(0)
         thresholds = thresholds.repeat(2 * input_dim, 1)
     return new_dm_l_all, new_dm_u_all, cs, thresholds, split_depth
+
+def get_patch_indices(xs, ys, xe, ye):
+    pixel_pos = []
+    for i in range(xs, xe):
+        for j in range(ys, ye):
+            pixel_pos.append(i * 28 + j)
+    return pixel_pos
+
+
+@torch.no_grad()
+def patch_attack_input_split(x, dm_l_all, dm_u_all, xs, ys, xe, ye, selected_domain_id, shape=None,
+                         cs=None, thresholds=None):
+    """
+    Input perturbation method of Patch Attack version.
+    Split only between the specified patch area (xs, ys) to (xe, ye), rather than the entire input space.
+    Split the dm_l_all and dm_u_all on the pixel with the longest edge length within the patch area
+    If there are more than one longest egdes then randomly select one of them
+    """
+
+    dm_l_all = dm_l_all.flatten(1)
+    dm_u_all = dm_u_all.flatten(1)
+
+    patch_indices = get_patch_indices(xs, ys, xe, ye)
+
+    patch_indices = torch.tensor(patch_indices)
+
+    # Calculate the longest edge length to split within the patch
+    score = (dm_u_all[:, patch_indices] - dm_l_all[:, patch_indices]).unsqueeze(-2)
+    max_val = score.amax(dim=-2)  # Get the longest edge length
+    max_indices = (score == max_val).nonzero(as_tuple=True)[-1]
+    idx = patch_indices[max_indices[torch.randint(len(max_indices), (1,))]]  # randomly select one
+    # Calculate the middle value (mid) of the upper and lower boundaries of the currently selected pixel
+    mid = (dm_l_all[:, idx] + dm_u_all[:, idx]) / 2
+
+    # Create two new subdomains: Left subdomain：[l, mid]，right subdomain：[mid, u]
+    dm_l_left = dm_l_all.clone()
+    dm_u_left = dm_u_all.clone()
+    dm_u_left[:, idx] = mid
+
+    dm_l_right = dm_l_all.clone()
+    dm_u_right = dm_u_all.clone()
+    dm_l_right[:, idx] = mid
+
+    new_dm_l_all = torch.cat((dm_l_left, dm_l_right), dim=0).reshape(-1, *shape[1:])
+    new_dm_u_all = torch.cat((dm_u_left, dm_u_right), dim=0).reshape(-1, *shape[1:])
+
+    # reshape
+    new_dm_l_all = new_dm_l_all.reshape(-1, *shape[1:])
+    new_dm_u_all = new_dm_u_all.reshape(-1, *shape[1:])
+
+    left_id, right_id = generate_samples_for_split_domains(
+        selected_domain_id=selected_domain_id,
+        pixel_pos=idx,
+        dm_l_all=new_dm_l_all,
+        dm_u_all=new_dm_u_all,
+    )
+
+
+    if cs is not None:
+        cs_shape = [2] + [1] * (len(cs.shape) - 1)
+        cs = cs.repeat(*cs_shape)
+    if thresholds is not None:
+        thresholds = thresholds.squeeze(0)
+        thresholds = thresholds.repeat(2, 1)
+
+    return new_dm_l_all, new_dm_u_all, cs, thresholds, left_id, right_id
 
 def get_split_depth(dm_l_all):
     split_depth = 1

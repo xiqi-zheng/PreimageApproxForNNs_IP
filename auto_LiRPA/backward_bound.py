@@ -3,6 +3,7 @@ from torch import Tensor
 from collections import deque, defaultdict
 from tqdm import tqdm
 from auto_LiRPA.optimize_input_poly import concretize_poly_vol,concretize_poly_vol_LSE,concretize_relu_poly_vol
+from src import arguments
 from .patches import Patches
 from .utils import *
 from .bound_ops import *
@@ -422,6 +423,7 @@ def get_sparse_C(
                 newC[0, torch.arange(unstable_size), unstable_idx] = 1.0
                 newC = newC.expand(batch_size, -1, -1).view(batch_size, unstable_size, *node.output_shape[1:])
                 reduced_dim = True
+                print(f"newC sum: {newC.sum().item()}")
             else:
                 unstable_idx = None
                 del ref_intermediate_lb, ref_intermediate_ub

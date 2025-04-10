@@ -19,6 +19,8 @@ import pandas as pd
 import onnx2pytorch
 import onnx
 import onnxruntime as ort
+from torch.distributions import Uniform
+
 import arguments
 import warnings
 from attack_pgd import attack_pgd
@@ -544,13 +546,40 @@ def load_generic_dataset(eps_temp=None):
     test_data, data_max, data_min = load_dataset()
     if eps_temp is None:
         raise ValueError('You must specify an epsilon')
-    testloader = torch.utils.data.DataLoader(test_data, batch_size=10000, shuffle=False, num_workers=4)
+    testloader = torch.utils.data.DataLoader(test_data, batch_size=1, shuffle=False, num_workers=4)
     X, labels = next(iter(testloader))
     runnerup = None
     # Rescale epsilon.
     eps_temp = torch.reshape(eps_temp / torch.tensor(arguments.Config["data"]["std"], dtype=torch.get_default_dtype()), (1, -1, 1, 1))
     print("############################")
     print(f"X shape: {X.shape}, labels shape: {labels.shape}")
+    print("############################")
+
+    return X, labels, data_max, data_min, eps_temp, runnerup
+
+def load_MNIST_dataset(eps_temp=None):
+    database_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'datasets/MNIST')
+    mean = arguments.Config["data"]["mean"]
+    std = arguments.Config["data"]["std"]
+    X = np.load(os.path.join(database_path, "X_data.npy"))
+    labels = np.load(os.path.join(database_path, "Y_data.npy"))
+    X = torch.from_numpy(X.astype(np.float32))
+    labels = torch.from_numpy(labels.astype(int))
+    if eps_temp is None:
+        raise ValueError('You must specify an epsilon')
+    runnerup = torch.load(os.path.join(database_path, "runner.pt"))
+    if eps_temp is None: eps_temp = 0.07
+
+    data_max = torch.tensor((1. - mean) / std).reshape(1, -1, 1, 1)
+    data_min = torch.tensor((0. - mean) / std).reshape(1, -1, 1, 1)
+
+    print("############################")
+    print("Sampled data loaded. No normalization used!")
+    print("Shape:", X.shape, labels.shape, runnerup.shape)
+    print("X range:", X.max(), X.min(), X.mean())
+    # print("epsilon:", eps_temp)
+    # print("max, min:", data_max, data_min)
+    # print("Note runnerup label is empty here!")
     print("############################")
 
     return X, labels, data_max, data_min, eps_temp, runnerup
@@ -588,7 +617,7 @@ def load_eran_dataset(eps_temp=None):
         print("Note runnerup label is empty here!")
         print("############################")
 
-    elif arguments.Config["data"]["dataset"] == "MNIST_ERAN":
+    elif arguments.Config["data"]["dataset"] == "M2NIST_ERAN":
         X = np.load(os.path.join(database_path, "mnist_eran/X_eran.npy"))
         mean = 0.1307
         std = 0.3081
@@ -661,7 +690,31 @@ def load_eran_dataset(eps_temp=None):
         # print("max, min:", data_max, data_min)
         print("Note runnerup label is empty here!")
         print("############################")
+    elif arguments.Config["data"]["dataset"] == "MNIST_ERAN":
+        X = np.load(os.path.join(database_path, "mnist_eran/X_eran.npy"))
+        mean = 0.1307
+        std = 0.3081
+        X = (X - mean) / std
 
+        labels = np.load(os.path.join(database_path, "mnist_eran/y_eran.npy"))
+        runnerup = np.copy(labels)
+        X = torch.from_numpy(X.astype(np.float32))
+        labels = torch.from_numpy(labels.astype(int))
+        runnerup = torch.load(os.path.join(database_path, "mnist_eran/runner.pt"))
+        if eps_temp is None: eps_temp = 0.3
+
+        eps_temp = torch.tensor(eps_temp / std).reshape(1, -1, 1, 1)
+        data_max = torch.tensor((1. - mean) / std).reshape(1, -1, 1, 1)
+        data_min = torch.tensor((0. - mean) / std).reshape(1, -1, 1, 1)
+
+        print("############################")
+        print("Sampled data loaded. Data already preprocessed!")
+        print("Shape:", X.shape, labels.shape, runnerup.shape)
+        print("X range:", X.max(), X.min(), X.mean())
+        # print("epsilon:", eps_temp)
+        # print("max, min:", data_max, data_min)
+        # print("Note runnerup label is empty here!")
+        print("############################")
     else:
         raise(f'Unsupported dataset {arguments.Config["data"]["dataset"]}')
 
@@ -764,9 +817,11 @@ def load_verification_dataset(eps_before_normalization):
     elif "SAMPLE" in arguments.Config["data"]["dataset"]:
         # Sampled datapoints (a small subset of MNIST/CIFAR), only for reproducing some paper results.
         data_config = load_sampled_dataset()
-    elif "CIFAR" in arguments.Config["data"]["dataset"] or "MNIST" in arguments.Config["data"]["dataset"]:
+    elif "CIFAR" in arguments.Config["data"]["dataset"]:
         # general MNIST and CIFAR dataset with mean/std defined in config file.
         data_config = load_generic_dataset(eps_temp=eps_before_normalization)
+    elif "MNIST" in arguments.Config["data"]["dataset"]:
+        data_config = load_MNIST_dataset(eps_temp=eps_before_normalization)
     else:
         exit("Dataset not supported in this file! Please customize load_verification_dataset() function in utils.py.")
 
@@ -814,7 +869,7 @@ def default_onnx_and_vnnlib_loader(file_root, onnx_path, vnnlib_path):
 
 def calc_img_specs(attack_tp, img, model=None):
     if 'patch' in attack_tp:
-        data_lb, data_ub = calc_patch_spec(attack_tp, img, patch_len=arguments.Config["preimage"]["patch_len"], patch_wid=arguments.Config["preimage"]["patch_width"])
+        data_lb, data_ub = calc_patch_spec(attack_tp, img, patch_len=arguments.Config["preimage"]["patch_len"], patch_wid=arguments.Config["preimage"]["patch_width"], dataset=arguments.Config["data"]["dataset"])
     elif attack_tp == 'l0_rand':
         data_lb, data_ub = calc_l0_spec_rand(img, l0_norm=arguments.Config["preimage"]["l0_norm"])
     elif attack_tp == "l0_sensitive":
@@ -890,19 +945,41 @@ def get_spec_patch_eps(image, xs, ys, xe, ye, dataset):
                 # print(specLB.shape)
                 specLB[0][i * 28 + j] = max(specLB[0][i * 28 + j] - patch_eps, 0)
                 specUB[0][i * 28 + j] = min(specUB[0][i * 28 + j] + patch_eps, 1)
-                # pixel_pos.append(i * 28 + j)    
+                # pixel_pos.append(i * 28 + j)
+    if dataset == 'MNIST_ERAN':
+        mean = 0.1307
+        std = 0.3081
+        patch_eps_std = patch_eps / std
+
+        data_min = (0. - mean) / std
+        data_max = (1. - mean) / std
+        for i in range(xs, xe):
+            for j in range(ys, ye):
+                idx = i * 28 + j
+                specLB[0][idx] = torch.max(specLB[0][idx] - patch_eps_std, torch.tensor(data_min, device=specLB.device))
+                specUB[0][idx] = torch.min(specUB[0][idx] + patch_eps_std, torch.tensor(data_max, device=specUB.device))
     return specLB, specUB
 def get_spec_patch(image, xs, ys, xe, ye, dataset):
     specLB = torch.clone(image.detach())
     specUB = torch.clone(image.detach())
     # pixel_pos = []
+    mean = torch.tensor(arguments.Config["data"]["mean"])
+    std = torch.tensor(arguments.Config["data"]["std"])
+    # Todo: deal with mnist_eran with fix mean and std
     if dataset == 'mnist':
         for i in range(xs, xe):
             for j in range(ys, ye):
                 # print(specLB.shape)
-                specLB[0][i * 28 + j] = 0
-                specUB[0][i * 28 + j] = 1
-                # pixel_pos.append(i * 28 + j)    
+                # Normalize specLB and specUB
+                specLB[0][i * 28 + j] = (0. - mean) / std
+                specUB[0][i * 28 + j] = (1. - mean) / std
+                # pixel_pos.append(i * 28 + j)
+    if dataset == 'MNIST_ERAN':
+        for i in range(xs, xe):
+            for j in range(ys, ye):
+                specLB[0][i * 28 + j] = (0. - mean) / std
+                specUB[0][i * 28 + j] = (1. - mean) / std
+
     return specLB, specUB
 def calc_l0_spec(img, l0_norm, count, dataset="mnist"):
 
@@ -1133,6 +1210,7 @@ def parse_run_mode():
             assert arguments.Config["model"]["input_shape"] is not None, 'vnnlib does not have shape information, please specify by --input_shape'
             shape = arguments.Config["model"]["input_shape"]
             vnnlib_all = [vnnlib]  # Only 1 vnnlib file.
+            print(vnnlib_all)
 
         if arguments.Config['model']['name'] is None:
             # use onnx model prefix as model_name
@@ -1165,3 +1243,235 @@ def parse_run_mode():
     print(f'Internal results will be saved to {save_path}.')
     # FIXME_NOW: model_ori should not be handled in this function! Do it in the utility function that loads models for all cases.
     return run_mode, save_path, file_root, example_idx_list, model_ori, vnnlib_all, shape
+
+def calc_pixel_pos(attack_tp):
+    if 'patch' in attack_tp:
+        pixel_pos = []
+        xs, ys = arguments.Config["preimage"]["patch_h"], arguments.Config["preimage"]["patch_v"]
+        xe = xs + arguments.Config["preimage"]["patch_len"]
+        ye = ys + arguments.Config["preimage"]["patch_width"]
+        for i in range(xs, xe):
+            for j in range(ys, ye):
+                pixel_pos.append(i * 28 + j)
+    elif attack_tp == 'l0_rand':
+        pixel_pos = []
+        random.seed(arguments.Config["general"]["seed"])
+        l0_norm = arguments.Config["preimage"]["l0_norm"]
+        length = 28
+        width = 28
+        for _ in range(l0_norm):
+            x = random.randint(0, length-1)
+            y = random.randint(0, width-1)
+            pixel_pos.append(x * 28 + y)
+    elif attack_tp == "l0_sensitive":
+        grad_pix_file = os.path.join(arguments.Config["preimage"]["sample_dir"], "grad_pixel.pkl")
+        with open(grad_pix_file, 'rb') as f:
+            grad_pix_list = pickle.load(f)
+        pixel_pos = []
+        for grad_pix in grad_pix_list:
+            x = grad_pix[1][0]
+            y = grad_pix[1][1]
+            pixel_pos.append(x * 28 + y)
+    return pixel_pos
+
+def calc_samples(x,dm_l, dm_u):
+    sample_num = arguments.Config['preimage']["sample_num"]
+    atk_tp = arguments.Config["preimage"]["atk_tp"]
+    multi_spec = arguments.Config["preimage"]["multi_spec"]
+    x_L, x_U = dm_l, dm_u
+    img_shape = [-1] + list(x.shape[1:])
+    img = x.data.reshape(x.shape[0], -1)
+    # print("shape of img: ",img.shape)
+    x_L = x_L.reshape(x_L.shape[0], -1)
+    x_U = x_U.reshape(x_U.shape[0], -1)
+    torch.manual_seed(arguments.Config["general"]["seed"])
+    # torch.manual_seed(arguments.Config["general"]["seed"])
+    if multi_spec:
+        prop_samples = Uniform(x_L, x_U).sample([sample_num])
+    else:
+        if atk_tp == 'l_inf':
+            prop_samples = Uniform(x_L, x_U).sample([sample_num])
+            prop_samples = torch.squeeze(prop_samples).reshape(img_shape)
+        else:
+            prop_samples = img.repeat(sample_num, 1)
+            print("shape of prop_samples: ", prop_samples.shape)
+            pixel_pos = calc_pixel_pos(atk_tp)
+            pixel_pos = torch.tensor(pixel_pos).to(arguments.Config["general"]["device"])
+            pixel_lower = x_L[0][pixel_pos]
+            pixel_upper = x_U[0][pixel_pos]
+            pixel_vals = Uniform(pixel_lower, pixel_upper).sample([sample_num])
+            prop_samples[:, pixel_pos] = pixel_vals
+            prop_samples = prop_samples.reshape(img_shape)
+
+    torch.save(prop_samples, os.path.join(arguments.Config['preimage']["sample_dir"],
+                                          'sample_{}_{}_size_{}_{}.pt'.format(arguments.Config["data"]["dataset"],
+                                                                                    atk_tp,
+                                                                                    arguments.Config["preimage"]["patch_len"],
+                                                                                    arguments.Config["preimage"]["patch_width"],
+                                                                                    )))
+
+
+def generate_samples_for_split_domains(selected_domain_id, dm_l_all, dm_u_all, pixel_pos):
+    """
+    Generate samples for the two new subdomains from a selected domain.
+    Each new subdomain differs only in `pixel_pos`.
+    This function updates:
+      - sample_rules.pkl (records the pixel changes and base sample)
+      - current_split.pt (stores samples for just the current two split domains)
+    """
+
+    original_shape = dm_l_all.shape[1:]  # e.g., [1, 28, 28]
+    dm_l_all = dm_l_all.flatten(1)
+    dm_u_all = dm_u_all.flatten(1)
+    domain_num, input_dim = dm_l_all.shape
+
+    sample_num = arguments.Config["preimage"]["sample_num"]
+    dataset_tp = arguments.Config["data"]["dataset"]
+    sample_dir = arguments.Config["preimage"]["sample_dir"]
+    patch_len = arguments.Config["preimage"]["patch_len"]
+    patch_width = arguments.Config["preimage"]["patch_width"]
+    atk_tp = arguments.Config["preimage"]["atk_tp"]
+
+    # === Load base sample and sample_rules.pkl ===
+    base_sample = torch.load(os.path.join(sample_dir, 'base_sample_{}_{}_size_{}_{}.pt'.format(
+        dataset_tp, atk_tp,
+        patch_len, patch_width)))
+    if len(base_sample.shape) == 4:
+        base_sample = base_sample.unsqueeze(1)  # [sample_num, 1, 1, 28, 28]
+
+    sample_rules_path = os.path.join(sample_dir, "sample_rules_{}_{}.pkl").format(patch_len,patch_width)
+    if os.path.exists(sample_rules_path):
+        with open(sample_rules_path, 'rb') as f:
+            sample_rules = pickle.load(f)
+    else:
+        sample_rules = []
+
+
+    if len(sample_rules) != 0:
+        # === Recover selected domain sample from base ===
+        matching_rule = None
+        for rule in sample_rules:
+            if rule['domain_id'] == selected_domain_id:
+                matching_rule = rule
+                break
+
+
+        assert matching_rule is not None, f"No rule found for domain_id {selected_domain_id}"
+        sample = base_sample
+
+        for px, val_range in zip(matching_rule['changed_pixel'], matching_rule['pixel_val_ranges']):
+            low, high = val_range
+            eps = 1e-6
+            if high <= low:
+                high = low + eps
+            sampler = torch.distributions.Uniform(low, high)
+            sampled_val = sampler.sample([sample_num]).to(sample.device)
+            sample.view(sample_num, -1)[:, px] = sampled_val
+    else:
+        sample = base_sample
+
+
+    # === sample new pixel index ===
+    dm_l_all = dm_l_all.flatten(1)
+    dm_u_all = dm_u_all.flatten(1)
+
+    low_l = dm_l_all[0, pixel_pos]
+    high_l = dm_u_all[0, pixel_pos]
+    low_r = dm_l_all[1, pixel_pos]
+    high_r = dm_u_all[1, pixel_pos]
+    eps = 1e-6
+
+    # Sample left domain [l, mid]
+    left_sampler = torch.distributions.Uniform(low_l, high_l if high_l > low_l else high_l + eps)
+    sample_left = sample.clone()
+    sample_left.view(sample_num, -1)[:, pixel_pos] = left_sampler.sample([sample_num]).to(sample.device)
+
+    # Sample right domain [mid, u]
+    right_sampler = torch.distributions.Uniform(low_r, high_r if high_r > low_r else high_r + eps)
+    sample_right = sample.clone()
+    sample_right.view(sample_num, -1)[:, pixel_pos] = right_sampler.sample([sample_num]).to(sample.device)
+
+    # === Save current split samples ===
+    current_split = torch.stack([sample_left, sample_right], dim=1).view(sample_num, 2, *original_shape)  # [sample_num, 2, 1, 28, 28]
+    torch.save(current_split.cpu(), os.path.join(arguments.Config['preimage']["sample_dir"],
+                                           'sample_{}_{}_size_{}_{}.pt'.format(dataset_tp,
+                                                                               atk_tp,
+                                                                               patch_len,
+                                                                               patch_width
+                                                                               )))
+
+
+    # === Append new rules to pickle ===
+    new_left_id = max([r['domain_id'] for r in sample_rules], default=0) + 1
+    new_right_id = new_left_id + 1
+
+    if len(sample_rules) == 0:
+        sample_rules.append({
+            "domain_id": new_left_id,
+            "changed_pixel": [pixel_pos],
+            "pixel_val_ranges": [[low_l, high_l]]
+        })
+        sample_rules.append({
+            "domain_id": new_right_id,
+            "changed_pixel": [pixel_pos],
+            "pixel_val_ranges":[[low_r, high_r]]
+        })
+    else:
+        sample_rules.append({
+            "domain_id": new_left_id,
+            "changed_pixel": matching_rule['changed_pixel'] + [pixel_pos],
+            "pixel_val_ranges": matching_rule['pixel_val_ranges'] + [[low_l, high_l]]
+        })
+        sample_rules.append({
+            "domain_id": new_right_id,
+            "changed_pixel": matching_rule['changed_pixel'] + [pixel_pos],
+            "pixel_val_ranges": matching_rule['pixel_val_ranges'] + [[low_r, high_r]]
+        })
+
+    with open(sample_rules_path, 'wb') as f:
+        pickle.dump(sample_rules, f)
+
+    return new_left_id, new_right_id
+
+
+
+def generate_samples_for_domains(x, dm_l_all, dm_u_all, pixel_pos):
+    original_shape = dm_l_all.shape[1:]  # e.g. [1, 28, 28]
+    dm_l_all = dm_l_all.flatten(1)
+    dm_u_all = dm_u_all.flatten(1)
+    domain_num, input_dim = dm_l_all.shape
+    sample_num = arguments.Config["preimage"]["sample_num"]
+    dataset_tp = arguments.Config["data"]["dataset"]
+    sample_dir = arguments.Config["preimage"]["sample_dir"]
+    patch_len = arguments.Config["preimage"]["patch_len"]
+    patch_width = arguments.Config["preimage"]["patch_width"]
+    atk_tp = arguments.Config["preimage"]["atk_tp"]
+    samples = torch.load(os.path.join(sample_dir, 'sample_{}_{}_size_{}_{}.pt'.format(
+        dataset_tp, atk_tp,
+        patch_len, patch_width)))
+
+    if samples.ndim == 4:
+        # First round: [10, 1, 28, 28]
+        samples = samples.unsqueeze(2)  # → [10, 1, 1, 28, 28]
+        samples = samples.repeat(1, 2, 1, 1, 1)  # → [10, 2, 1, 28, 28]
+    samples = samples.view(sample_num, domain_num, -1)
+    # only resample for the pixel that was split
+    for i in range(domain_num):
+        low = dm_l_all[i, pixel_pos]
+        high = dm_u_all[i, pixel_pos]
+        eps = 1e-6
+        if high <= low:
+            high = low + eps
+        sampler = torch.distributions.Uniform(low, high)
+        samples[:, i, pixel_pos] = sampler.sample([sample_num])
+
+    samples = samples.view(sample_num, domain_num, *original_shape)  # dynamic reshape
+
+
+    torch.save(samples.cpu(), os.path.join(arguments.Config['preimage']["sample_dir"],
+                                          'sample_{}_{}_size_{}_{}.pt'.format(dataset_tp,
+                                                                              atk_tp,
+                                                                              patch_len,
+                                                                              patch_width
+                                                                              )))
+
