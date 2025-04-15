@@ -729,7 +729,7 @@ class LiRPAConvNet:
                 # for each layer except the last output layer
                 if len(zero_indices_batch[d]):
                     # we set lower = 0 in first half batch, and upper = 0 in second half batch
-                    if arguments.Config["model"]["name"] == "mnist_conv_small":
+                    if arguments.Config["model"]["name"] == "mnist_conv_small" or arguments.Config["model"]["name"] == "mnist_6_100" :
                         zero_indices_batch = [torch.as_tensor(t, dtype=torch.long, device=self.net.device) for t in zero_indices_batch]
                         zero_indices_neuron = [torch.as_tensor(t, dtype=torch.long, device=self.net.device) for t in zero_indices_neuron]
                         lower_bounds[d][:2 * batch].view(2 * batch, -1)[zero_indices_batch[d], zero_indices_neuron[d]] = 0.0

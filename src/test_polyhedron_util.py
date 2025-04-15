@@ -1510,27 +1510,27 @@ def calc_input_coverage_initial_input_over(A_b_dict):
         cov_quota = 0
     return target_vol, cov_quota
 
-def add_patch_attack(samples, epsilon = 0.3):
-    patch_x_start = arguments.Config["preimage"]["patch_h"]
-    patch_y_start = arguments.Config["preimage"]["patch_v"]
-    patch_len = arguments.Config["preimage"]["patch_len"]
-    patch_width = arguments.Config["preimage"]["patch_width"]
-
-    patch_x_end = patch_x_start + patch_len
-    patch_y_end = patch_y_start + patch_width
-
-    print(f"Applying Patch Attack on region: X({patch_x_start}:{patch_x_end}), Y({patch_y_start}:{patch_y_end})")
-
-    batch_size = samples.shape[0]
-    # Only modify the values of samples in the patch area
-    perturbed_samples = samples.clone()
-    # Add disturbance to the specified patch area
-    perturbed_samples[:, :, patch_x_start:patch_x_end, patch_y_start:patch_y_end] += \
-        torch.empty((batch_size, 1, patch_x_end - patch_x_start, patch_y_end - patch_y_start)).uniform_(-epsilon, epsilon)
-
-    # Make sure the value is still within the legal range
-    perturbed_samples = torch.clamp(perturbed_samples, 0, 1)
-    return perturbed_samples
+# def add_patch_attack(samples, epsilon = 0.3):
+#     patch_x_start = arguments.Config["preimage"]["patch_h"]
+#     patch_y_start = arguments.Config["preimage"]["patch_v"]
+#     patch_len = arguments.Config["preimage"]["patch_len"]
+#     patch_width = arguments.Config["preimage"]["patch_width"]
+#
+#     patch_x_end = patch_x_start + patch_len
+#     patch_y_end = patch_y_start + patch_width
+#
+#     print(f"Applying Patch Attack on region: X({patch_x_start}:{patch_x_end}), Y({patch_y_start}:{patch_y_end})")
+#
+#     batch_size = samples.shape[0]
+#     # Only modify the values of samples in the patch area
+#     perturbed_samples = samples.clone()
+#     # Add disturbance to the specified patch area
+#     perturbed_samples[:, :, patch_x_start:patch_x_end, patch_y_start:patch_y_end] += \
+#         torch.empty((batch_size, 1, patch_x_end - patch_x_start, patch_y_end - patch_y_start)).uniform_(-epsilon, epsilon)
+#
+#     # Make sure the value is still within the legal range
+#     perturbed_samples = torch.clamp(perturbed_samples, 0, 1)
+#     return perturbed_samples
 
 def calc_input_coverage_initial_input_under(A_b_dict):
     torch.manual_seed(arguments.Config["general"]["seed"])
@@ -1548,8 +1548,8 @@ def calc_input_coverage_initial_input_under(A_b_dict):
     samples = Uniform(data_min, data_max).sample([sample_num])
     samples = torch.squeeze(samples, 1)
 
-    if arguments.Config["preimage"]["patch"]:
-        samples = add_patch_attack(samples)
+    # if arguments.Config["preimage"]["patch"]:
+    #     samples = add_patch_attack(samples)
 
     # dm_vol = np.prod(data_max.cpu().detach().numpy() - data_min.cpu().detach().numpy())
 

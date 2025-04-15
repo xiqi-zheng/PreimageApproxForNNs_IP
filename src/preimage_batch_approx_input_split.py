@@ -277,29 +277,7 @@ def batch_verification_input_split(
             cov_input_idx_all = calc_Hrep_coverage_multi_spec_pairwise_under(A_b_dict_input_idx_all, new_dm_l_all, new_dm_u_all, batch_spec, x)
         # select one bisection to keep which leads to best coverage
         # remeber that the algorithm takes every possible bisection on input feats
-        if arguments.Config["preimage"]["patch"]:
-            # === patch mode: simplified logic, only one pixel was split ===
-            assert len(cov_input_idx_all) == 1, "Patch mode expects only one split candidate"
-            cov_info = cov_input_idx_all[0]  # cov_info = [(vol_L, cov_L), (vol_R, cov_R)]
-
-            cov_quota_list = [cov_info[0][1], cov_info[1][1]]  # coverage ratio
-            target_vol_list = [cov_info[0][0], cov_info[1][0]]  # target volume
-
-            # === Directly use select_idx = 0 (only one split pixel) ===
-            select_idx = 0
-
-            # extract symbolic bound
-            lA_list = [
-                A_b_dict_input_idx_all['lA'][0 * batch_spec: 1 * batch_spec],
-                A_b_dict_input_idx_all['lA'][1 * batch_spec: 2 * batch_spec]
-            ]
-            lbias_list = [
-                A_b_dict_input_idx_all['lbias'][0 * batch_spec: 1 * batch_spec],
-                A_b_dict_input_idx_all['lbias'][1 * batch_spec: 2 * batch_spec]
-            ]
-
-
-        else:
+        if not arguments.Config["preimage"]["patch"]:
             select_idx = None
             max_under_reward = None
             max_under_cov = None
@@ -352,6 +330,137 @@ def batch_verification_input_split(
             uA_list = None
             ubias_list = None
             dom_lb = dom_lb[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
+        if arguments.Config["preimage"]["patch"]:
+            # === patch mode: simplified logic, only one pixel was split ===
+            assert len(cov_input_idx_all) == 1, "Patch mode expects only one split candidate"
+            cov_info = cov_input_idx_all[0]  # cov_info = [(vol_L, cov_L), (vol_R, cov_R)]
+
+            cov_quota_list = [cov_info[0][1], cov_info[1][1]]  # coverage ratio
+            target_vol_list = [cov_info[0][0], cov_info[1][0]]  # target volume
+
+            # Estimate current volume for comparison
+            try:
+                current_idx = d.get_topk_indices().item()
+                current_node = d[current_idx]
+                current_vol = current_node[-1] * current_node[0]  # cov × vol
+            except:
+                current_vol = 0  # fallback
+
+            new_total_vol = target_vol_list[0] + target_vol_list[1]
+
+            # --- helper function ---
+            def estimate_cov_quota_from_d(d):
+                whole_vol = 0
+                cov_vol = 0
+                for i in range(len(d)):
+                    tmp_dm = d[i]
+                    if tmp_dm[-1] == 0:
+                        continue
+                    else:
+                        whole_vol += tmp_dm[-1]
+                        cov_vol += tmp_dm[-1] * tmp_dm[0]
+                if whole_vol == 0:
+                    print('no exact preimage exists')
+                    return 1
+                return cov_vol / whole_vol
+
+            # --- coverage = 0 case ---
+            valid_mask = [cov > 0 for cov in cov_quota_list]
+            if not any(valid_mask):
+                print("Both subdomains have 0 coverage, skipping add_multi()")
+                Visited += 2
+                return estimate_cov_quota_from_d(d)
+
+            # --- no volume improvement ---
+            if new_total_vol <= current_vol:
+                print("Split does not improve volume, skipping add_multi()")
+                Visited += 2
+                return estimate_cov_quota_from_d(d)
+
+
+            indices = [i for i, valid in enumerate(valid_mask) if valid]
+
+            # extract symbolic bound (only keep valid ones)
+            lA_list_full = [
+                A_b_dict_input_idx_all['lA'][0 * batch_spec: 1 * batch_spec],
+                A_b_dict_input_idx_all['lA'][1 * batch_spec: 2 * batch_spec]
+            ]
+            lbias_list_full = [
+                A_b_dict_input_idx_all['lbias'][0 * batch_spec: 1 * batch_spec],
+                A_b_dict_input_idx_all['lbias'][1 * batch_spec: 2 * batch_spec]
+            ]
+            lA_list = [lA_list_full[i] for i in indices]
+            lbias_list = [lbias_list_full[i] for i in indices]
+
+            # extract domain attributes
+            # new_dm_l_all = new_dm_l_all[0 * batch_spec: 2 * batch_spec]
+            # new_dm_u_all = new_dm_u_all[0 * batch_spec: 2 * batch_spec]
+            # cs = cs[0 * batch_spec: 2 * batch_spec]
+            # thresholds = thresholds[0 * batch_spec: 2 * batch_spec]
+            # dom_lb = dom_lb[0 * batch_spec: 2 * batch_spec]
+            new_dm_l_all = torch.cat([new_dm_l_all[i * batch_spec: (i + 1) * batch_spec] for i in indices], dim=0)
+            new_dm_u_all = torch.cat([new_dm_u_all[i * batch_spec: (i + 1) * batch_spec] for i in indices], dim=0)
+            cs = torch.cat([cs[i * batch_spec: (i + 1) * batch_spec] for i in indices], dim=0)
+            thresholds = torch.cat([thresholds[i * batch_spec: (i + 1) * batch_spec] for i in indices], dim=0)
+            dom_lb = torch.cat([dom_lb[i * batch_spec: (i + 1) * batch_spec] for i in indices], dim=0)
+
+            # slope
+            if slopes is not None and type(slopes) != list:
+                slope_dict = {}
+                for key0 in slopes.keys():
+                    slope_dict[key0] = {}
+                    for key1 in slopes[key0].keys():
+                        slope_dict[key0][key1] = slopes[key0][key1][:, :, 0 * batch_spec: 2 * batch_spec]
+            else:
+                slope_dict = None
+            # if slopes is not None and type(slopes) != list:
+            #     slope_dict = {}
+            #     for key0 in slopes.keys():
+            #         slope_dict[key0] = {}
+            #         for key1 in slopes[key0].keys():
+            #             slope_dict[key0][key1] = torch.cat([
+            #                 slopes[key0][key1][:, :, i * batch_spec: (i + 1) * batch_spec] for i in indices
+            #             ], dim=-1)
+            # else:
+            #     slope_dict = None
+
+            # add domains
+            # adddomain_start_time = time.time()
+            # d.add_multi(
+            #     cov_quota_list,
+            #     target_vol_list,
+            #     new_dm_l_all.detach(),
+            #     new_dm_u_all.detach(),
+            #     slope_dict,
+            #     cs,
+            #     thresholds,
+            #     lA_list=lA_list,
+            #     lbias_list=lbias_list,
+            #     lb=dom_lb,
+            #     uA_list=None,
+            #     ubias_list=None,
+            #     ub=dom_ub,
+            #     split_idx=torch.tensor([left_id, right_id])
+            # )
+            # adddomain_time = time.time() - adddomain_start_time
+            adddomain_start_time = time.time()
+            d.add_multi(
+                [cov_quota_list[i] for i in indices],
+                [target_vol_list[i] for i in indices],
+                new_dm_l_all.detach(),
+                new_dm_u_all.detach(),
+                slope_dict,
+                cs,
+                thresholds,
+                lA_list=lA_list,
+                lbias_list=lbias_list,
+                lb=dom_lb,
+                uA_list=None,
+                ubias_list=None,
+                ub=dom_ub,
+                split_idx=torch.tensor([left_id, right_id])
+            )
+            adddomain_time = time.time() - adddomain_start_time
     elif bound_upper:
         cov_input_idx_all = calc_Hrep_coverage_multi_spec_pairwise_over(A_b_dict_input_idx_all, new_dm_l_all, new_dm_u_all, batch_spec)
         select_idx = None
@@ -411,44 +520,7 @@ def batch_verification_input_split(
             uA_list.append(A_b_dict_input_idx_all['uA'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec])
             ubias_list.append(A_b_dict_input_idx_all['ubias'][2*select_idx*batch_spec+j*batch_spec: 2*select_idx*batch_spec+(j+1)*batch_spec]) 
         dom_ub = dom_ub[2*select_idx*batch_spec: 2*(select_idx+1)*batch_spec]
-    if arguments.Config["preimage"]["patch"]:
-        # extract domain attributes
-        new_dm_l_all = new_dm_l_all[0 * batch_spec: 2 * batch_spec]
-        new_dm_u_all = new_dm_u_all[0 * batch_spec: 2 * batch_spec]
-        cs = cs[0 * batch_spec: 2 * batch_spec]
-        thresholds = thresholds[0 * batch_spec: 2 * batch_spec]
-        dom_lb = dom_lb[0 * batch_spec: 2 * batch_spec]
-
-        # slope
-        if slopes is not None and type(slopes) != list:
-            slope_dict = {}
-            for key0 in slopes.keys():
-                slope_dict[key0] = {}
-                for key1 in slopes[key0].keys():
-                    slope_dict[key0][key1] = slopes[key0][key1][:, :, 0 * batch_spec: 2 * batch_spec]
-        else:
-            slope_dict = None
-
-        # add domains
-        adddomain_start_time = time.time()
-        d.add_multi(
-            cov_quota_list,
-            target_vol_list,
-            new_dm_l_all.detach(),
-            new_dm_u_all.detach(),
-            slope_dict,
-            cs,
-            thresholds,
-            lA_list=lA_list,
-            lbias_list=lbias_list,
-            lb=dom_lb,
-            uA_list=None,
-            ubias_list=None,
-            ub=dom_ub,
-            split_idx = torch.tensor([left_id, right_id])
-        )
-        adddomain_time = time.time() - adddomain_start_time
-    else:
+    if not arguments.Config["preimage"]["patch"]:
         # xy: cov_quota_list records the added domains, actually in the end you can always obtain the cov_quota, dm_l, dm_b into the class and obtain them later
         cov_quota_list = [cov_info[1] for cov_info in cov_input_idx_all[select_idx][:2]]
         target_vol_list = [cov_info[0] for cov_info in cov_input_idx_all[select_idx][:2]]

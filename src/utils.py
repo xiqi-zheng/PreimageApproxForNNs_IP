@@ -654,7 +654,7 @@ def load_eran_dataset(eps_temp=None):
         labels = torch.from_numpy(labels.astype(int))
         # runnerup = torch.from_numpy(runnerup.astype(int))
         runnerup = torch.load(os.path.join(database_path, "mnist_eran/runner_un.pt"))
-        if eps_temp is None: eps_temp = 0.3
+        if eps_temp is None: eps_temp = 0.05
 
         eps_temp = torch.tensor(eps_temp).reshape(1, -1, 1, 1)
         data_max = torch.tensor(1.).reshape(1, -1, 1, 1)
@@ -966,7 +966,7 @@ def get_spec_patch(image, xs, ys, xe, ye, dataset):
     mean = torch.tensor(arguments.Config["data"]["mean"])
     std = torch.tensor(arguments.Config["data"]["std"])
     # Todo: deal with mnist_eran with fix mean and std
-    if dataset == 'mnist':
+    if dataset == 'mnist' or dataset == 'MNIST_ERAN_UN':
         for i in range(xs, xe):
             for j in range(ys, ye):
                 # print(specLB.shape)

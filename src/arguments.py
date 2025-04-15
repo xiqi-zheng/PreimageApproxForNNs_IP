@@ -72,21 +72,21 @@ class ConfigHandler:
                           hierarchy=h + ["vcas_idx"])    
         self.add_argument("--upper_time_loss", type=float, default=0.5, help='Indicate the upper bound of time loss for the VCAS system.',
                           hierarchy=h + ["upper_time_loss"])
-        self.add_argument("--patch_h", type=int, default=11, help='Indicate the patch horizontal index to build input preimage for.',
+        self.add_argument("--patch_h", type=int, default=10, help='Indicate the patch horizontal index to build input preimage for.',
                           hierarchy=h + ["patch_h"]) #11
-        self.add_argument("--patch_v", type=int, default=12, help='Indicate the patch vertical index to build input preimage for.',
+        self.add_argument("--patch_v", type=int, default=10, help='Indicate the patch vertical index to build input preimage for.',
                           hierarchy=h + ["patch_v"])
         self.add_argument("--patch_len", type=int, default=4, help='Indicate the patch length to build input preimage for.',
                           hierarchy=h + ["patch_len"])
         self.add_argument("--patch_width", type=int, default=4, help='Indicate the patch width to build input preimage for.',
                           hierarchy=h + ["patch_width"])
-        self.add_argument("--patch_eps", type=float, default=0.1, help='Patch noise epsilon for preimage generation of patch attack.',
+        self.add_argument("--patch_eps", type=float, default=0.9, help='Patch noise epsilon for preimage generation of patch attack.',
                           hierarchy=h + ["patch_eps"])
         self.add_argument("--l0_norm", type=int, default=24, help='Indicate the l0 norm to build input preimage for.',
                           hierarchy=h + ["l0_norm"])      
-        self.add_argument("--sample_num", type=int, default=10, help='Sample number to estimate preimage coverage.',
+        self.add_argument("--sample_num", type=int, default=1000, help='Sample number to estimate preimage coverage.',
                           hierarchy=h + ["sample_num"])
-        self.add_argument("--branch_budget", type=int, default=40000, help='Branching budget to see how many preimage polytopes we set as upper limit.',
+        self.add_argument("--branch_budget", type=int, default=4000, help='Branching budget to see how many preimage polytopes we set as upper limit.',
                           hierarchy=h + ["branch_budget"])        
         self.add_argument("--multi_spec", type=bool, default=False, help='The multi specification support for preimage analysis.',
                     hierarchy=h + ["multi_spec"])
@@ -110,7 +110,7 @@ class ConfigHandler:
                     hierarchy=h + ["compare_split"])  
         self.add_argument("--smooth_val", type=bool, default=True, help='Whether to use smooth val for input feature selection.',
                     hierarchy=h + ["smooth_val"])      
-        self.add_argument("--atk_tp", type=str, default="patch", choices=["patch_eps", "patch", "l0_rand", "l0_sensitive", "l_inf"], help='The pixel attack to specify the input specification.',
+        self.add_argument("--atk_tp", type=str, default="patch_eps", choices=["patch_eps", "patch", "l0_rand", "l0_sensitive", "l_inf"], help='The pixel attack to specify the input specification.',
                           hierarchy=h + ["atk_tp"])
         h = ["general"]
         self.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"],
@@ -223,7 +223,7 @@ class ConfigHandler:
         self.add_argument("--norm", type=float, default='inf',
                           help='Lp-norm for epsilon perturbation in robustness verification (1, 2, inf).',
                           hierarchy=h + ["norm"])
-        self.add_argument("--epsilon", type=float, default=0.3,
+        self.add_argument("--epsilon", type=float, default=0.15,
                           help='Set perturbation size (Lp norm). If not set, a default value may be used based on dataset loader.',
                           hierarchy=h + ["epsilon"])
         self.add_argument("--vnnlib_path", type=str, default=None,
@@ -365,7 +365,7 @@ class ConfigHandler:
                           hierarchy=h + ["decision_thresh"])
         # NOTE timeout is also used as a termination condition for the preimage refinement procedure.
         # FIXME timeout should not be under "bab"
-        self.add_argument("--timeout", type=float, default=360000,
+        self.add_argument("--timeout", type=float, default=350,
                           help='Timeout (in second) for verifying one image/property.', hierarchy=h + ["timeout"])
         self.add_argument("--timeout_scale", type=float, default=1, help='Scale the timeout for development purpose.',
                           hierarchy=h + ["timeout_scale"])
@@ -409,7 +409,7 @@ class ConfigHandler:
                           hierarchy=h + ["sb_coeff_thresh"])
         # NOTE set "enable_input_split" to True to enable input split, and False to enable unstable neuron fsplit.
         h = ["bab", "branching", "input_split"]
-        self.add_argument("--enable_input_split", type=bool, default=False,
+        self.add_argument("--enable_input_split", type=bool, default=True,
                           help='Branch on input domain rather than unstable neurons.', hierarchy=h + ["enable"])
         self.add_argument('--enhanced_bound_prop_method', default="alpha-crown",
                           choices=["alpha-crown", "crown", "forward+crown", "crown-ibp"],

@@ -424,7 +424,7 @@ class InputDomain:
         elif arguments.Config["preimage"]["over_approx"]:
             self.uncov_vol = self.total_sub_vol * (self.cov_quota - 1)
     def __lt__(self, other):
-        return self.uncov_vol < other.uncov_vol 
+        return self.uncov_vol < other.uncov_vol
 
     def __le__(self, other):
         return self.uncov_vol <= other.uncov_vol
